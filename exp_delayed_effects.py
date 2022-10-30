@@ -29,7 +29,7 @@ def run(rec_how, acc_how, intervention_end=None):
     else:
         acc_prob = 30
     
-    conclusion = Conclusion(list(range(5)))
+    conclusion = Conclusion(list(range(1)))
     grp_info = [{'mean': mu1, 'variance': sigma1*np.identity(2), 'size': N1},
                 {'mean': mu2, 'variance': sigma2*np.identity(2), 'size': N2}]
     conclusion.run_experiments(grp_info, plot=False, init_how='embedding', Ns=N1+N2, Nf=10, 

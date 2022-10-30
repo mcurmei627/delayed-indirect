@@ -10,7 +10,7 @@ a = 2
 b = 5
 beta=10
 
-def run(setting, rec_how, acc_how, intervention_end=None, node_removal=False, edge_removal=False, p2_indirect=False):
+def run(setting, rec_how, acc_how, intervention_end=None, node_removal=False, edge_removal=False, p2_mediated=False):
     if setting == 'heterogeneity':
         mu1 = np.array([0,1.1])
         mu2 = np.array([1.1,0])
@@ -66,11 +66,11 @@ def run(setting, rec_how, acc_how, intervention_end=None, node_removal=False, ed
                             rec_how=rec_how,
                             node_removal=node_removal,
                             edge_removal=edge_removal, 
-                            p2_indirect=p2_indirect,
+                            p2_mediated=p2_mediated,
                             comp_grp_metrics=True,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1)
     conclusion.experiments = None
-    fname='group_effects/{}_{}_{}_{}_{}_{}_{}.pkl'.format(setting, rec_how, acc_how, intervention_end, node_removal, edge_removal, p2_indirect)
+    fname='group_effects/{}_{}_{}_{}_{}_{}_{}.pkl'.format(setting, rec_how, acc_how, intervention_end, node_removal, edge_removal, p2_mediated)
     with open(fname, 'wb') as f:
         pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
 
@@ -80,8 +80,8 @@ acc_how = ['constant']
 intervention_end = list(range(50, 401, 100))
 node_removal = [True, False]
 edge_removal = [True, False]
-p2_indirect = [True, False]
+p2_mediated = [True, False]
 
-settings = list(product(settings, rec_how, acc_how, intervention_end, node_removal, edge_removal, p2_indirect))
+settings = list(product(settings, rec_how, acc_how, intervention_end, node_removal, edge_removal, p2_mediated))
 Parallel(n_jobs=64)(delayed(run)(*setting) for setting in tqdm(settings))
     

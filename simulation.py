@@ -4,9 +4,6 @@ import numpy as np
 import networkx as nx
 import random
 import copy
-from sklearn.linear_model import LinearRegression
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
 import json
 import os
 import matplotlib.pyplot as plt
@@ -15,8 +12,8 @@ import matplotlib.pyplot as plt
 Node class stores node attributes: 
     - idx, which corresponds to its node index in graph.
     - color, which corresponds to its group index.
-    - embed, the node embedding.
-    - age, the node age.
+    - embed, the node's embedding vector.
+    - age, the node's age.
     - time, the duration of time it has been added to the graph.
 """
 class Node:
@@ -77,9 +74,9 @@ class Group:
 
 """
 Network class takes in a list of Group objects to create a graph based on their nodes information. It supports graph-level operations, stores graph attributes, and provides a snapshot of graph metrics.
-    - conn_matrix: a matrix that stores constant connection probabilities for group pairs. conn_matrix[i][j] refers to the connection prob between group i and group j.
-    - edge_matrix: a matrix that stores the number of connections for group pairs. edge_matrix[i][j] refers to the number of edges between group i and group j.
-    - edge_phase: a dictionary that maps 4 different phases to the number of edges that are formed in the corresponding phases.
+    - edge_matrix: a matrix that stores the number of connections for group pairs. edge_matrix[i][j] refers to the number of edges between group i and group j. 
+    - edge_phase: a dictionary that maps 5 different steps (initialization, natural growth phase 1, natural growth phase 2 mediated & unmediated, recommendation) to the number of edges that are formed in the corresponding steps.
+    - edge_matrix_phase: a dictionary that maps 5 different steps to the connection matrixes that keep record of the number of connections for group pairs.
 
 """
 class Network:
@@ -107,12 +104,13 @@ class Network:
         self.init_how = kwargs.get('init_how', 'color')
         self.initialize_edge(self.init_how)
 
-    # takes list of groups, initilizes the object in graph
+    # initilize the nodes in graph by group_lst
     def initialize_node(self):
         for grp in self.group_lst:
             for node_idx, node_obj in grp.node_map.items():
                 self.G.add_node(node_obj.idx, vector=node_obj.embed, color=node_obj.color, age=node_obj.age, time=node_obj.time)
 
+    # initialize the edges in graph by constant connection probability (color) or embedding affinity (embedding)
     def initialize_edge(self, how):
         if how == 'color':
             self._initialize_edge_by_color()
@@ -157,7 +155,6 @@ class Network:
         conn_pairs = list(zip(l1, l2))
         [self.add_edge(pair[0], pair[1], 'init') for pair in conn_pairs]
         
-
     def add_node(self, node: Node):
         assert not self.G.has_node(node.idx)
         if node.embed is None:
@@ -165,7 +162,6 @@ class Network:
             node.embed = np.random.multivariate_normal(grp.mean, grp.variance)
         self.G.add_node(node.idx, vector=node.embed, color=node.color, age=node.age, time=node.time, obj=node)
         
-
     def add_edge(self, n1: int, n2: int, phase: str):
         assert not self.G.has_edge(n1, n2)
         self.G.add_edge(n1, n2, phase=phase, time=self.time_step)
@@ -193,7 +189,6 @@ class Network:
             self.edge_matrix[c2][c1] -= 1
             self.edge_matrix_phase[edge_phase][c1][c2] -= 1
             self.edge_matrix_phase[edge_phase][c2][c1] -= 1
-
 
     def remove_node(self, idx):
         for n1, n2, data in list(self.G.edges(idx, data=True)):
@@ -286,37 +281,13 @@ class Network:
         gini = 2 * np.sum( np.arange(n) * degree_list) / (n * np.sum(degree_list)) - (n + 1) / n
         return gini
         
-    
     def homophily(self, grp: Group):
         color = grp.color
         return self.edge_matrix[color][color] / np.sum(self.edge_matrix, axis=0)[color] - grp.size / self.nodes
     
     def sigmoid(self, n):
         return 1/(1 + np.exp(-n * self.a + self.b))
-    
-    def project_low_dim(self, how='PCA'):
-        nodes = self.G.nodes(data=True)
-        colors = [node[1]['color'] for node in nodes]
-        ids = [node[0] for node in nodes]
-        embedding_mat = np.array([node_info['vector'] for _, node_info in nodes])
-        n, d = embedding_mat.shape
-        if d == 2:
-            return embedding_mat, ids, colors
-        if how == 'PCA':
-            embedding_mat = PCA(n_components=2).fit_transform(embedding_mat)
-        if how == 'TSNE':
-            embedding_mat = TSNE(n_components=2).fit_transform(embedding_mat)
-        return embedding_mat, ids, colors
-    
-    def show_network_embedding(self, how='PCA', save=False, name=None):
-        raise NotImplementedError
-    
-    def show_network_nx(self, save=False, name=None):
-        raise NotImplementedError
-    
-    def show_network_pyvis(self, save=False, name=None):
-        raise NotImplementedError
-    
+
     def plot_graph(self, size_by = 'degree'):
         plt.rcParams["figure.figsize"] = (10, 8)
         plt.clf()
@@ -355,9 +326,6 @@ class Network:
     
 """
 Dynamics class takes in a Network object and experiment-specific parameters to run one step of the experiment.
-    - Ns: the number of candidates to consider in phase 1
-    - Nf: the number of candidates to consider in phase 2
-    - a, b: coefficient used in the sigmoid function 
 """
 class Dynamics:
     def __init__(self, network: Network, **kwargs):
@@ -370,26 +338,22 @@ class Dynamics:
         self.num_acc = 0
         self.ng_how = kwargs.get('ng_how', 'color')
         self.p2_prob = kwargs.get('p2_prob', 0.05)
-        self.p2_indirect = kwargs.get('p2_indirect', True)
+        self.p2_mediated = kwargs.get('p2_mediated', True)
         self.Ns = kwargs.get('Ns', None)
         self.Nf = kwargs.get('Nf', None)
-
         self.node_removal = kwargs.get('node_removal', True)
 
     def step(self, nodes_step, idx, intervention, **kwargs):
-
-        # assume new node comes in proportional to the existing groups
-        grp_size = np.array([float(grp.size) for grp in self.grp_lst])
+        # assume new node comes in proportional to groups' initial sizes
         arrival_probs = self.network.init_sizes/np.sum(self.network.init_sizes)
         new_nodes_grp = np.random.choice(len(self.grp_lst), size=nodes_step, p=arrival_probs)
         for i in range(nodes_step):
             grp = self.grp_lst[new_nodes_grp[i]]
             node = grp.add_node(idx)
-            self.step_natural_growth(grp, node, self.ng_how, self.p2_indirect)
+            self.step_natural_growth(node, self.ng_how, self.p2_mediated)
             idx += 1
         if intervention:
             self.intervention(**kwargs)
-        # also add time_step
         self.time_increment()
         if self.node_removal:
             self.remove_node()
@@ -406,9 +370,8 @@ class Dynamics:
                 accept = self.accept_edge(idx, i, how='constant', acc_prob=self.p2_prob)
                 if accept:
                     self.network.add_edge(idx, i, 'init')
-            
 
-    def step_natural_growth(self, grp: Group, node: Node, ng_how, p2_indirect):
+    def step_natural_growth(self, node: Node, ng_how, p2_mediated):
         self.network.add_node(node)
         # phase 1
         node_list = copy.deepcopy(list(self.network.G.nodes))
@@ -426,12 +389,12 @@ class Dynamics:
         # phase 2
         dist2_nodes = list(self.network.get_dist_nodes(node.idx, 2))
         random.shuffle(dist2_nodes)
-        if not p2_indirect:
+        if not p2_mediated:
             dist2_nodes = self.remove_mediating_nodes(node.idx, dist2_nodes)
         if not (self.Nf is None):
             dist2_nodes = dist2_nodes[:self.Nf]
 
-        if not p2_indirect:
+        if not p2_mediated:
             for i in dist2_nodes:
                 accept = self.accept_edge(node.idx, i, how='constant', acc_prob=self.p2_prob)
                 if accept:
@@ -526,7 +489,6 @@ class Dynamics:
             random.shuffle(nns)
             self.network.remove_edge(idx, nns[0])
 
-
     def recommend_edge(self, idx, how = 'random_fof', **kwargs):
         if how == 'random_fof':
             return(self._recommend_random_fof(idx))
@@ -571,11 +533,6 @@ class Dynamics:
         softmax_probs = softmax_probs/np.sum(softmax_probs)
         candidate = np.random.choice(eligible, p=softmax_probs)
         return candidate
-
-    
-    def _recommend_learning(self, idx):
-        # the embeddings are so bad that this is not worth it
-        pass
         
     def time_increment(self):    
         for grp in self.grp_lst:
@@ -611,12 +568,12 @@ class Dynamics:
                 removed_nns.remove(nn)
         return removed_nns
     
-    
     def sigmoid(self, n):
         return 1/(1 + np.exp(-n * self.a + self.b))
 
 """
-Experiment class is where we initialize all the Groups together with their Nodes, the Network, and the Dynamics. 
+Experiment class is where we initialize the Groups and their Nodes, the Network, and the Dynamics. 
+
 It runs the Dynamics through the entire time steps, and records the graph metrics along the way.
 """
 class Experiment:
@@ -649,7 +606,6 @@ class Experiment:
                 step_intervention = False
             self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, **kwargs)
             self.compute_metrics(t, **kwargs)
-            # print(t)
 
     def compute_metrics(self, time_step, **kwargs):
         freq = kwargs.get('freq', 1)
@@ -705,7 +661,7 @@ class Experiment:
                 self.metrics['conn_matrix'] = self.metrics['conn_matrix'].tolist()
             self.metrics['ng_how'] = self.dynamics.ng_how
             self.metrics['p2_prob'] = self.dynamics.p2_prob
-            self.metrics['p2_indirect'] = self.dynamics.p2_indirect
+            self.metrics['p2_mediated'] = self.dynamics.p2_mediated
             self.metrics['Ns'] = self.dynamics.Ns
             self.metrics['Nf'] = self.dynamics.Nf
             self.metrics['intervention_time'] = self.intervention_time
@@ -777,6 +733,11 @@ class Experiment:
                     self.metrics[f"global_clustering_{i}"].append(self.dynamics.network.global_clustering(grp=grp))
                     self.metrics[f"gini_coeff_{i}"].append(self.dynamics.network.gini_coeff(grp=grp))
 
+"""
+Conclusion class takes in a list of seeds to run a set of experiments. 
+
+It keeps record of the graph metrics for each experiment, save them into a json file, and calculates the averages & confidence intervals for each metric.
+"""
 class Conclusion:
     def __init__(self, seeds: 'list[int]'):
         self.seeds = seeds
@@ -788,8 +749,6 @@ class Conclusion:
         if plot or (not record_each_run):
             self.grp_num = len(grp_info)
             self.total_step = kwargs.get('total_step', 200)
-            self.metrics_time = kwargs.get('metrics_time', 20)
-            self.do_lg = kwargs.get('do_lg', False)
 
             self.initialize_metrics(**kwargs)
         for i in self.seeds:
@@ -923,30 +882,15 @@ class Conclusion:
         se = sp.stats.sem(a, axis = 0)
         h = se * sp.stats.t.ppf((1 + confidence) / 2., len(self.seeds)-1)
         return m.tolist(), h.tolist()
-
-    def linear_regression(self, y):
-        x = list(range(self.total_step))
-        t = self.metrics_time
-        try:
-            model = LinearRegression().fit(np.array(x[-t:]).reshape((-1, 1)), y[-t:])
-            slope = model.coef_[0]
-            intercept = model.intercept_
-            r_sq = model.score(np.array(x[-t:]).reshape((-1, 1)), y[-t:])
-            return [slope, intercept, r_sq]
-        except ValueError:
-            return[np.nan, np.nan, np.nan]
     
     def add_stats(self, metric_name):
         self.metric_names.append(metric_name)
         avg, ci = self.mean_confidence_interval(self.avg_metrics[metric_name])
         self.avg_values[metric_name] = avg
         self.ci_values[metric_name] = ci
-        if self.do_lg:
-            lg = self.linear_regression(avg)
-            self.lg_values[metric_name] = lg
 
     def take_average(self):
-        self.metric_names, self.avg_values, self.ci_values, self.lg_values = [], {}, {}, {}
+        self.metric_names, self.avg_values, self.ci_values = [], {}, {}
         self.add_stats('time')
         self.add_stats('added_nodes')
         if self.compute_nodes:
@@ -1010,11 +954,60 @@ class Conclusion:
         plt.savefig('result.png') 
         # plt.show()
     
+'''
+To run an experiment, there are 3 steps:
 
+1. Specify grp_info, a list of map. Each map represents a group, with the following keys: mean, variance, size.
+
+2. Initilize a Conclusion object with a list of seeds, e.g. conclusion = Conclusion(list(range(5)))
+
+3. run conclusion.run_experiments to run a set of experiments.
+
+    Conclusion.run_experiments takes in grp_info and all the optional experiment settings. 
+    The following attributes can be specified: (they are annotated with their default values)
+    sigmoid coeff: a=2, b=5
+
+    edge initialization: 
+        init_how='color' (option: 'embedding')
+        conn_matrix=None
+
+    natural growth: 
+        ng_how='color' (for natural growth phase 1, options: 'embedding')
+        p2_prob=0.05
+        p2_mediated=True (whether to consider node candidates that are at distance 2 via medited edges in phase 2)
+        Ns=None (number of samples for natural growth phase 1)
+        Nf=None (number of samples for natural growth phase 2)
+
+    whether rec: 
+        intervention_time=list(range(self.total_step)) (empty means no intervention)
+
+    how rec: 
+        rec_how='random_fof' (option: 'embedding', 'adamic_adar')
+        rec_sample_size=None
+        rec_sample_fraction=None
+        rec_distance=2
+        acc_how='embedding' (option: 'constant')
+        acc_prob=None
+
+    dynamic setting: 
+        node_step=20
+        total_step=200
+        node_removal=True
+        death_func=lambda x: 0.0001*np.exp(0.08*x)
+        edge_removal=False
+
+    options for computing each metric (True by default): 
+        freq=1
+        comp_nodes, comp_edges, comp_degree, comp_degvar, comp_bifrac, comp_cluster, comp_age, comp_nn, comp_homop, comp_gini
+        comp_grp_metrics=False (compute avg_degree, degree_var, gini_coeff, clustering for each group)
+
+    options for collecting metrics:
+        record_each_run=True
+        plot=False
+'''
 if __name__ == "__main__":
-    # grp_info is a list of map. Each map represents a group. 
-    # The following keys are needed for each group: mean, variance, size
     
+    # An example of running the experiments
     mu1 = np.array([0,1])
     mu2 = np.array([1,0])
     N1 = 100
@@ -1031,93 +1024,3 @@ if __name__ == "__main__":
                             ng_how='embedding', intervention_time=list(range(0, 500)),
                             rec_how='embedding',
                             freq=5, record_each_run=False, rec_sample_size=200)
-    
-    #   OLDER VERSION
-    #grp_info = [{'mean': np.array([1, 0]), 'variance': .05*np.identity(2), 'size': 100}, {'mean': np.array([0, 1]), 'variance': .05*np.identity(2), 'size': 100}]
-    
-    # Conclusion class takes in a list of seeds
-    #conclusion = Conclusion(list(range(5)))
-
-    '''
-    conclusion.run_experiments takes in grp_info and all the optional experiment settings. 
-    The following attributes can be specified: (they are annotated with their default values)
-        sigmoid coeff: a=2, b=5
-
-        edge initialization: 
-            init_how='color' (option: 'embedding')
-            conn_matrix=None
-
-        natural growth: 
-            ng_how='color' (for natural growth phase 1, options: 'embedding')
-            p2_prob=0.05
-            p2_indirect=True (whether to include the mediating nodes as candidates in phase 2)
-            Ns=None (number of samples for natural growth phase 1)
-            Nf=None (number of samples for natural growth phase 2)
-
-        whether rec: 
-            intervention_time=list(range(self.total_step)) (empty means no intervention)
-
-        how rec: 
-            rec_how='random_fof' (option: 'embedding', 'adamic_adar')
-            rec_sample_size=None
-            rec_sample_fraction=None
-            rec_distance=2
-            acc_how='embedding' (option: 'constant')
-            acc_prob=None
-
-        dynamic setting: 
-            node_step=20
-            total_step=200
-            node_removal=True
-            death_func=lambda x: 0.0001*np.exp(0.08*x)
-            edge_removal=False
-
-        metrics setting: (not useful for now)
-            metrics_time=20 (the number of steps to compute average stat and perform lin reg)
-
-        options for computing each metric (True by default): 
-            freq=1
-            comp_nodes, comp_edges, comp_degree, comp_degvar, comp_bifrac, comp_cluster, comp_age, comp_nn, comp_homop, comp_gini
-            comp_grp_metrics=False (compute avg_degree, degree_var, gini_coeff, clustering for each group)
-        
-        options for collecting metrics:
-            record_each_run=True
-            plot=False
-            do_lg=False
-    '''
-    #conclusion.run_experiments(grp_info, plot=True, conn_matrix = np.array([[0.1, 0.05], [0.05, 0.1]]), init_how='embedding', Ns=100, Nf=100, node_step=20, total_step=200, acc_how='color', acc_prob=np.array([[0.2, 0.2], [0.2, 0.2]]), intervention_time=list(range(0, 100)))
-
-
-
-    # for i in range(5):
-    #     # required: grp_info
-    #     # oprional: seed, a, b, conn_matrix, init_how, node_step, total_step, 
-    #     experiment = Experiment(grp_info, seed=i, conn_matrix = np.array([[0.1, 0.05], [0.05, 0.1]]), init_how='embedding', total_step=200)
-    #     # optional: ng_how, p2_prob, Ns, Nf, node_removal, edge_removal, intervention_time, rec_how, rec_sample_size, acc_how, acc_prob, freq, comp_xx
-    #     experiment.run(acc_how='embedding', ng_how='embedding', Ns=100, Nf=100, acc_prob=0.25)
-    #     if not os.path.isfile('result.json'):
-    #         with open("result.json", mode='w') as f:
-    #             json.dump([experiment.metrics], f)
-    #     else:
-    #         with open("result.json", "r") as f:
-    #             data = json.loads(f.read())
-    #         with open("result.json", "w") as f:
-    #             data.append(experiment.metrics)
-    #             json.dump(data, f)
-
-
-# code saved to compute average and do lin reg
-
-    # conclusion = Conclusion(list(range(5)))
-    # metrics_time = 20
-    # metric_names, avg_values, ci_values, lg_values = conclusion.run_experiments(grp_info, conn_matrix = np.array([[0.1, 0.05], [0.05, 0.1]]), total_step=200, Ns=100, Nf=100, metrics_time=metrics_time)
-    # with open('result.csv', 'w+', newline ='') as f:
-    #     write = csv.writer(f)
-    #     write.writerow(metric_names)
-    # stat = []
-    # for m in range(len(avg_values)):
-    #     stat.append(float("{:.8f}".format(sum(avg_values[m][-metrics_time:])/metrics_time)))
-    #     stat.append(lg_values[m])
-    # with open('result.csv', 'a', newline ='') as f:
-    #     write = csv.writer(f)
-    #     write.writerow(stat)
