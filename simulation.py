@@ -1,21 +1,15 @@
-from ast import Not
-from cmath import rect
 from collections import defaultdict
-from re import L
 import scipy as sp
 import numpy as np
 import networkx as nx
 import random
 import copy
-from sklearn import neighbors
 from sklearn.linear_model import LinearRegression
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
-import csv
 import json
 import os
 import matplotlib.pyplot as plt
-# from pyvis.network import Network as pvnet
 
 """
 Node class stores node attributes: 
@@ -283,7 +277,6 @@ class Network:
         if nodes_subset:
             raise NotImplementedError
         degree_list = list(self.G.degree())
-        # degree_list = list(dict(self.G.degree()).values())
         if grp:
             color = grp.color
             degree_list = [(n,d) for n, d in degree_list if self.G.nodes[n]['color'] == color]
@@ -753,11 +746,6 @@ class Experiment:
                     mono, bi = self.dynamics.network.mono_bi_edge_phase(k)
                     self.metrics[f"{p}_mono"].append(mono)
                     self.metrics[f"{p}_bi"].append(bi)
-                # self.metrics['phase0'].append(self.dynamics.network.edge_phase['init'])
-                # self.metrics['phase1'].append(self.dynamics.network.edge_phase['ngp1'])
-                # self.metrics['phase2_unmediated'].append(self.dynamics.network.edge_phase['ngp2_unmediated'])
-                # self.metrics['phase2_mediated'].append(self.dynamics.network.edge_phase['ngp2_mediated'])
-                # self.metrics['phase3'].append(self.dynamics.network.edge_phase['rec'])
             if compute_degree:
                 self.metrics['avg_degree'].append(self.dynamics.network.avg_degree())
             if compute_degree_var:
@@ -900,11 +888,6 @@ class Conclusion:
                 self.avg_metrics[p].append(exp_metrics[p])
                 self.avg_metrics[f"{p}_mono"].append(exp_metrics[f"{p}_mono"])
                 self.avg_metrics[f"{p}_bi"].append(exp_metrics[f"{p}_bi"])
-            # self.avg_metrics['phase0'].append(exp_metrics['phase0'])
-            # self.avg_metrics['phase1'].append(exp_metrics['phase1'])
-            # self.avg_metrics['phase2_unmediated'].append(exp_metrics['phase2_unmediated'])
-            # self.avg_metrics['phase2_mediated'].append(exp_metrics['phase2_mediated'])
-            # self.avg_metrics['phase3'].append(exp_metrics['phase3'])
         if self.compute_degree:
             self.avg_metrics['avg_degree'].append(exp_metrics['avg_degree'])
         if self.compute_degree_var:
@@ -1138,5 +1121,3 @@ if __name__ == "__main__":
     # with open('result.csv', 'a', newline ='') as f:
     #     write = csv.writer(f)
     #     write.writerow(stat)
-
-    # TODO: add iterations of experiment?

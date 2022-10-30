@@ -1,10 +1,7 @@
 import numpy as np
-import pandas as pd
-from Simulation_final import *
-import scipy as sp
+from simulation import *
 import pickle as pkl
 
-from time import time
 from joblib import Parallel, delayed
 from itertools import product
 from tqdm import tqdm
@@ -32,7 +29,7 @@ def run(rec_how, acc_how, intervention_end=None):
     else:
         acc_prob = 30
     
-    conclusion = Conclusion(list(range(5)))
+    conclusion = Conclusion(list(range(1)))
     grp_info = [{'mean': mu1, 'variance': sigma1*np.identity(2), 'size': N1},
                 {'mean': mu2, 'variance': sigma2*np.identity(2), 'size': N2}]
     conclusion.run_experiments(grp_info, plot=False, init_how='embedding', Ns=N1+N2, Nf=10, 
@@ -56,4 +53,3 @@ intervention_end = list(range(50, 401, 25))
 
 settings = list(product(rec_how, acc_how, intervention_end))
 Parallel(n_jobs=32)(delayed(run)(*setting) for setting in tqdm(settings))
-    

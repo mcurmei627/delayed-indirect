@@ -1,10 +1,7 @@
 import numpy as np
-import pandas as pd
-from Simulation_final import *
-import scipy as sp
+from simulation import *
 import pickle as pkl
 
-from time import time
 from joblib import Parallel, delayed
 from itertools import product
 from tqdm import tqdm
