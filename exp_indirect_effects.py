@@ -43,7 +43,7 @@ def run(rec_how, acc_how, intervention_end=None):
                             p2_mediated=False,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1)
     conclusion.experiments = None
-    fname='exp_indirect_effects/{}_{}_{}.pkl'.format(rec_how, acc_how, intervention_end)
+    fname='experiments/exp_indirect_effects/{}_{}_{}.pkl'.format(rec_how, acc_how, intervention_end)
     with open(fname, 'wb') as f:
         pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
         

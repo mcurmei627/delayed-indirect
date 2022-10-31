@@ -70,7 +70,7 @@ def run(setting, rec_how, acc_how, intervention_end=None, node_removal=False, ed
                             comp_grp_metrics=True,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1)
     conclusion.experiments = None
-    fname='group_effects/{}_{}_{}_{}_{}_{}_{}.pkl'.format(setting, rec_how, acc_how, intervention_end, node_removal, edge_removal, p2_mediated)
+    fname='experiments/exp_group_effects/{}_{}_{}_{}_{}_{}_{}.pkl'.format(setting, rec_how, acc_how, intervention_end, node_removal, edge_removal, p2_mediated)
     with open(fname, 'wb') as f:
         pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
 
