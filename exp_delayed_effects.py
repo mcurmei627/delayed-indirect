@@ -17,7 +17,7 @@ b = 5
 acc_prob=0.5
 beta=10
 
-def run(rec_how, acc_how, intervention_end=None):
+def run(rec_how, acc_how, intervention_end=None, node_removal=False, edge_removal=False):
     if intervention_end == None:
         intervention_time = []
         intervention_end = 'na'
@@ -39,97 +39,19 @@ def run(rec_how, acc_how, intervention_end=None):
                             ng_how='embedding', 
                             intervention_time=intervention_time,
                             rec_how=rec_how,
-                            node_removal=False,
-                            edge_removal=False,
+                            node_removal=node_removal,
+                            edge_removal=edge_removal,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1)
     conclusion.experiments = None
-    fname='experiments/exp_delayed_effects/{}_{}_{}.pkl'.format(rec_how, acc_how, intervention_end)
+    fname='experiments/exp_delayed_effects/{}_{}_{}_{}_{}.pkl'.format(rec_how, acc_how, intervention_end, node_removal, edge_removal)
     with open(fname, 'wb') as f:
         pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
         
 rec_how  = ['embedding', 'random_fof']
 acc_how = ['constant', 'embedding']
 intervention_end = list(range(50, 401, 25))
+node_removal = [True, False]
+edge_removal = [True, False]
 
-settings = list(product(rec_how, acc_how, intervention_end))
+settings = list(product(rec_how, acc_how, intervention_end, node_removal, edge_removal))
 Parallel(n_jobs=32)(delayed(run)(*setting) for setting in tqdm(settings))
-
-
-
-def run(rec_how, acc_how, intervention_end=None):
-    if intervention_end == None:
-        intervention_time = []
-        intervention_end = 'na'
-    else:
-        intervention_time = list(range(50, intervention_end))
-        
-    if acc_how == 'constant':
-        acc_prob = 0.5
-    else:
-        acc_prob = 30
-    
-    conclusion = Conclusion(list(range(5)))
-    grp_info = [{'mean': mu1, 'variance': sigma1*np.identity(2), 'size': N1},
-                {'mean': mu2, 'variance': sigma2*np.identity(2), 'size': N2}]
-    conclusion.run_experiments(grp_info, plot=False, init_how='embedding', Ns=N1+N2, Nf=10, 
-                            node_step=5, total_step=400, acc_how=acc_how,acc_prob=acc_prob, a=a, b=b,
-                            beta=beta,
-                            p2_prob=0.5,
-                            ng_how='embedding', 
-                            intervention_time=intervention_time,
-                            rec_how=rec_how,
-                            node_removal=False,
-                            edge_removal=True,
-                            freq=5, record_each_run=False, rec_sample_fraction=0.1)
-    conclusion.experiments = None
-    fname='experiments/exp_delayed_effects_edge_removal/{}_{}_{}.pkl'.format(rec_how, acc_how, intervention_end)
-    with open(fname, 'wb') as f:
-        pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
-        
-rec_how  = ['embedding', 'random_fof']
-acc_how = ['constant', 'embedding']
-intervention_end = list(range(50, 401, 25))
-
-settings = list(product(rec_how, acc_how, intervention_end))
-Parallel(n_jobs=32)(delayed(run)(*setting) for setting in tqdm(settings))
-    
-    
-    
-    
-    
-def run(rec_how, acc_how, intervention_end=None):
-    if intervention_end == None:
-        intervention_time = []
-        intervention_end = 'na'
-    else:
-        intervention_time = list(range(50, intervention_end))
-        
-    if acc_how == 'constant':
-        acc_prob = 0.5
-    else:
-        acc_prob = 30
-    
-    conclusion = Conclusion(list(range(5)))
-    grp_info = [{'mean': mu1, 'variance': sigma1*np.identity(2), 'size': N1},
-                {'mean': mu2, 'variance': sigma2*np.identity(2), 'size': N2}]
-    conclusion.run_experiments(grp_info, plot=False, init_how='embedding', Ns=N1+N2, Nf=10, 
-                            node_step=5, total_step=400, acc_how=acc_how,acc_prob=acc_prob, a=a, b=b,
-                            beta=beta,
-                            p2_prob=0.5,
-                            ng_how='embedding', 
-                            intervention_time=intervention_time,
-                            rec_how=rec_how,
-                            node_removal=True,
-                            freq=5, record_each_run=False, rec_sample_fraction=0.1)
-    conclusion.experiments = None
-    fname='experiments/exp_delayed_effects_node_removal/{}_{}_{}.pkl'.format(rec_how, acc_how, intervention_end)
-    with open(fname, 'wb') as f:
-        pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
-        
-rec_how  = ['embedding', 'random_fof']
-acc_how = ['constant', 'embedding']
-intervention_end = list(range(50, 401, 25))
-
-settings = list(product(rec_how, acc_how, intervention_end))
-Parallel(n_jobs=32)(delayed(run)(*setting) for setting in tqdm(settings))
-    

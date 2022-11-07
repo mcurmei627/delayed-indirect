@@ -6,8 +6,25 @@ def smooth(y, box_pts):
     box = np.ones(box_pts)/box_pts
     y_smooth = np.convolve(y, box, mode='same')
     return y_smooth
-    
-def plot_conclusion(conclusion_list, metric, ax=None, pretty_name=None, plot_color=None, plot_time=None, *kwargs):
+
+def plot_context():
+    TITLE_SIZE = 25
+    LABEL_SIZE = 20
+    LEGEND_TITLE_SIZE = 18
+    LEGEND_SIZE = 15
+    TICK_SIZE = 15
+    FONT = 'serif'
+    params = {}
+    params['legend.title_fontsize'] = LEGEND_TITLE_SIZE
+    params['axes.labelsize'] = LABEL_SIZE
+    params['axes.titlesize'] = TITLE_SIZE
+    params['legend.fontsize'] = LEGEND_SIZE
+    params["xtick.labelsize"]= TICK_SIZE
+    params["ytick.labelsize"] = TICK_SIZE
+    params["font.family"] = "Times New Roman"
+    return params, FONT
+
+def plot_conclusion(conclusion_list, metric, ax=None, pretty_name=None, plot_color=None, plot_time=None, plot_range=[20, 400]):
     if ax is None:
         fig, ax = plt.subplots()
     for c, time_range in conclusion_list:
@@ -43,7 +60,7 @@ def plot_conclusion(conclusion_list, metric, ax=None, pretty_name=None, plot_col
         else:
             label = f'Intervention: t={min(time_range)}-{max(time_range)+1}'
             color = 'tab:blue' if plot_color is None else plot_color
-            alpha = 0.1 + 0.9 * max(time_range)/400
+            alpha = 0.1 + 0.9 * max(time_range)/plot_range[1]
             lw =2
         
         if metric == 'ph2_bifrac':
@@ -51,12 +68,11 @@ def plot_conclusion(conclusion_list, metric, ax=None, pretty_name=None, plot_col
             ax.plot(x, avg_um_bifrac, color=color, alpha=1, lw=lw)
         else:
             ax.plot(x, avg, label=label, color=color, alpha=alpha, lw=lw)
-            # ax.fill_between(x, (avg + ci), (avg - ci), alpha=0.1)
-    ax.set_xlim([20, 400])
+    ax.set_xlim(plot_range)
     ax.set(xlabel='Time', ylabel=metric if pretty_name is None else pretty_name)
     return ax
 
-def plot_indirect(unmed_clist, med_clist, metric, ax=None, pretty_name=None, plot_color=None, plot_time=None, *kwargs):
+def plot_indirect(unmed_clist, med_clist, metric, ax=None, pretty_name=None, plot_color=None, plot_time=None, plot_range=[20, 400]):
     for i in range(len(med_clist)):
         c_m, time_range0 = med_clist[i]
         c_um, time_range1 = unmed_clist[i]
@@ -80,16 +96,16 @@ def plot_indirect(unmed_clist, med_clist, metric, ax=None, pretty_name=None, plo
         else:
             label = f'Intervention: t={min(time_range0)}-{max(time_range0)+1}'
             color = 'tab:blue' if plot_color is None else plot_color
-            alpha = 0.3 + 0.7 * max(time_range0)/400
+            alpha = 0.3 + 0.7 * max(time_range0)/plot_range[1]
             lw =2
             ax.plot(x, avg_m, label=label, color=color,alpha=alpha, lw=lw)
             ax.plot(x, avg_um, label=label, color=color, linestyle='--', alpha=alpha, lw=lw)
     
-    ax.set_xlim([20, 400])
+    ax.set_xlim(plot_range)
     ax.set(xlabel='Time', ylabel=metric if pretty_name is None else pretty_name)
     return ax
 
-def plot_diff_frac(unmed_clist, med_clist, metric, nat_idx, ax=None, pretty_name=None, plot_color=None, smooth_pts=None, plot_time=None,*kwargs):
+def plot_diff_frac(unmed_clist, med_clist, metric, nat_idx, ax=None, pretty_name=None, plot_color=None, smooth_pts=None, plot_time=None, plot_range=[20, 400]):
     c_nat = med_clist[nat_idx][0]
     for i in range(len(med_clist)):
         c_m, time_range0 = med_clist[i]
@@ -111,9 +127,9 @@ def plot_diff_frac(unmed_clist, med_clist, metric, nat_idx, ax=None, pretty_name
         avg[11:14] = 0
         label = f'Intervention: t={min(time_range0)}-{max(time_range0)+1}'
         color = 'tab:blue' if plot_color is None else plot_color
-        alpha = 0.3 + 0.7 * max(time_range0)/400
+        alpha = 0.3 + 0.7 * max(time_range0)/plot_range[1]
         lw =2
         ax.plot(x, avg, label=label, color=color,alpha=alpha, lw=lw)
-    ax.set_xlim([20, 400])
+    ax.set_xlim(plot_range)
     ax.set(xlabel='Time', ylabel=metric if pretty_name is None else pretty_name)
     return ax
