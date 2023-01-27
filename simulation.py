@@ -17,12 +17,13 @@ Node class stores node attributes:
     - time, the duration of time it has been added to the graph.
 """
 class Node:
-    def __init__(self, idx, color=None, embed=None, age=None):
+    def __init__(self, idx, color=None, embed=None, age=None, is_treatment=False):
         self.idx = idx
         self.color = color
         self.embed = embed
         self.age = age
         self.time = 0
+        self.is_treatment = is_treatment
     
     def generate_embedding(self, mean, variance):
         self.embed = np.random.multivariate_normal(mean, variance)
@@ -52,6 +53,7 @@ class Group:
             self.node_map[node_ids[i]] = node
     
     def add_node(self, idx):
+        # do we add is_treatment property here?
         assert idx not in self.node_map
         embedding = np.random.multivariate_normal(self.mean, self.variance)
         node = Node(idx, color=self.color, embed=embedding, age=self.sample_age_distribution())
@@ -154,6 +156,7 @@ class Network:
         l1, l2 = sparse_sample.nonzero()
         conn_pairs = list(zip(l1, l2))
         [self.add_edge(pair[0], pair[1], 'init') for pair in conn_pairs]
+    
         
     def add_node(self, node: Node):
         assert not self.G.has_node(node.idx)
@@ -208,6 +211,22 @@ class Network:
     def get_dist_nodes(self, node, dist):
         return nx.descendants_at_distance(self.G, node, dist)
     
+    def get_treatment_nodes(self):
+        return [n for n in self.G.nodes if self.G.nodes[n]['is_treatment']]
+    
+    def get_control_nodes(self):
+        return [n for n in self.G.nodes if not self.G.nodes[n]['is_treatment']]
+    
+    def assign_treatment(self, idx_list):
+        # for idx in idx_list:
+        #     self.G.nodes[idx]['is_treatment'] = True
+        raise NotImplementedError
+    
+    def remove_treatment(self, idx_list):
+        # for idx in idx_list:
+        #     self.G.nodes[idx]['is_treatment'] = False
+        raise NotImplementedError
+    
     @property
     def edges(self):
         return self.G.number_of_edges()
@@ -215,8 +234,14 @@ class Network:
     @property
     def nodes(self):
         return self.G.number_of_nodes()
+    
+    @property
+    def treatment_nodes(self):
+        # how many treatment nodes are there
+        raise NotImplementedError
 
-    def global_clustering(self, grp=None):
+    def global_clustering(self, grp=None, idx_list=None):
+        # handle idx_list for every metric
         if grp:
             color = grp.color
             clustering_coeff = [nx.algorithms.cluster.clustering(self.G, n) for n in self.G.nodes() if self.G.nodes[n]['color'] == color]
@@ -419,7 +444,8 @@ class Dynamics:
                     else:
                         self.network.add_edge(node.idx, i, 'ngp2_unmediated')
     
-    def intervention(self, **kwargs):   
+    def intervention(self, **kwargs): 
+        # intervention is applied only to treatment nodes  
         self.rec_how = kwargs.get('rec_how', 'random_fof')
         self.rec_sample_size = kwargs.get('rec_sample_size', None)
         self.rec_sample_fraction = kwargs.get('rec_sample_fraction', None)
@@ -440,6 +466,8 @@ class Dynamics:
             node_lst = node_lst[:rec_sample_size]
         else: 
             node_lst = self.network.G.nodes
+        # filter nodes that are not treatment nodes
+        # node_lst = [node for node in node_lst if self.network.G.nodes[node]['is_treatment'] == True]
         for idx in node_lst:
             candidate = self.recommend_edge(idx, self.rec_how, **kwargs)
             if candidate != None:
@@ -602,6 +630,9 @@ class Experiment:
         for t in range(1, self.total_step+1):
             if t in self.intervention_time:
                 step_intervention = True
+                # make all nodes treament nodes
+                # all_nodes = list(self.dynamics.network.G.nodes)
+                # self.dynamics.network.assign_treatment(all_nodes)
             else:
                 step_intervention = False
             self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, **kwargs)
@@ -623,8 +654,13 @@ class Experiment:
         compute_num_rec = kwargs.get('comp_num_rec', True)
         compute_num_acc = kwargs.get('comp_num_acc', True)
         compute_grp_metrics = kwargs.get('comp_grp_metrics', False)
+        
+        #metric_names = ['nodes', 'edges', 'avg_degree', 'degree_variance', 'bi_frac', 'global_clustering', 'avg_age', 'avg_nn', 'homophily', 'gini', 'num_rec', 'num_acc']
+        # for metric in metric_names:
+        #     bla
 
         if time_step == 0:
+            
             self.metrics = defaultdict(list)
             self.metrics['time'] = []
             self.metrics['added_nodes'] = []
@@ -732,6 +768,33 @@ class Experiment:
                     self.metrics[f"degree_variance_{i}"].append(self.dynamics.network.degree_var(grp=grp))
                     self.metrics[f"global_clustering_{i}"].append(self.dynamics.network.global_clustering(grp=grp))
                     self.metrics[f"gini_coeff_{i}"].append(self.dynamics.network.gini_coeff(grp=grp))
+
+class AB_Experiment(Experiment):
+    def __init__(self, grp_info: 'list[dict]', treatment_probability, **kwargs):
+        super().__init__(grp_info, **kwargs)
+        self.treatment_nodes = []
+        # out of the initialized nodes: sample treatment_probability * total nodes to be treatment
+        # this need to modify the existingting network at time step 0
+        # thouglout the dynamics; whenever a new node is added, toss a coin with probability treatment_probability
+        # and assign the node to the treatment group
+        
+        # two options here: fixed number of treatment nodes or fixed proportion of treatment nodes
+        
+    def run(self, **kwargs):
+        self.intervention_time = kwargs.get('intervention_time', list(range(self.total_step)))
+        self.compute_metrics(0, initialize=True, **kwargs)
+        self.dynamics.triadic_closure_init()
+        for t in range(1, self.total_step+1):
+            if t in self.intervention_time:
+                step_intervention = True
+                # maybe modify step function to take in a list of nodes to be treated or a probability to be treated
+                # once the step completed look the new node and externally assign it to treatment group
+            else:
+                step_intervention = False
+            self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, **kwargs)
+            self.compute_metrics(t, **kwargs)
+        
+        
 
 """
 Conclusion class takes in a list of seeds to run a set of experiments. 
