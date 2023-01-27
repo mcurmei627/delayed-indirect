@@ -43,7 +43,10 @@ def run(rec_how, acc_how, intervention_end=None):
                             p2_mediated=False,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1)
     conclusion.experiments = None
-    fname='experiments/exp_indirect_effects/{}_{}_{}.pkl'.format(rec_how, acc_how, intervention_end)
+    folder_name = 'experiments/exp_indirect_effects'
+    if not os.path.exists(folder_name):
+        os.makedirs(folder_name)
+    fname = f'{folder_name}/{rec_how}_{acc_how}_{intervention_end}.pkl'
     with open(fname, 'wb') as f:
         pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
         

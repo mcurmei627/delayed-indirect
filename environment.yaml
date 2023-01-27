@@ -1,9 +1,11 @@
 name: delayed-indirect
 channels:
+  - "https://repo.continuum.io/pkgs/free"
   - conda-forge
   - anaconda
   - defaults
 dependencies:
+  - python=3.8.0
   - blas=1.0=mkl
   - brotli=1.0.9=hca72f7f_7
   - brotli-bin=1.0.9=hca72f7f_7

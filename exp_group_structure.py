@@ -70,7 +70,10 @@ def run(setting, rec_how, acc_how, intervention_end=None, node_removal=False, ed
                             comp_grp_metrics=True,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1)
     conclusion.experiments = None
-    fname='experiments/exp_group_effects/{}_{}_{}_{}_{}_{}_{}.pkl'.format(setting, rec_how, acc_how, intervention_end, node_removal, edge_removal, p2_mediated)
+    folder_name = 'experiments/exp_group_effects'
+    if not os.path.exists(folder_name):
+        os.makedirs(folder_name)
+    fname = f"{folder_name}/{setting}_{rec_how}_{acc_how}_{intervention_end}_{node_removal}_{edge_removal}_{p2_mediated}.pkl"
     with open(fname, 'wb') as f:
         pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
 
