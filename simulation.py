@@ -485,7 +485,6 @@ class Dynamics:
             node_lst = self.network.G.nodes
         # filter nodes that are not treatment nodes
         node_lst = [node for node in node_lst if self.network.G.nodes[node]['is_treatment']]
-        print(len(node_lst))
         for idx in node_lst:
             candidate = self.recommend_edge(idx, self.rec_how, **kwargs)
             if candidate != None:
