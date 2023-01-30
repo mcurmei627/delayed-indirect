@@ -392,7 +392,6 @@ class Dynamics:
             self.step_natural_growth(node, self.ng_how, self.p2_mediated)
             idx += 1
         self.network.assign_treatment(treatments)
-        print(self.network.num_treatment_nodes)
 
         if intervention:
             self.intervention(**kwargs)
