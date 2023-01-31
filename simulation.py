@@ -17,13 +17,12 @@ Node class stores node attributes:
     - time, the duration of time it has been added to the graph.
 """
 class Node:
-    def __init__(self, idx, color=None, embed=None, age=None, is_treatment=False):
+    def __init__(self, idx, color=None, embed=None, age=None):
         self.idx = idx
         self.color = color
         self.embed = embed
         self.age = age
         self.time = 0
-        self.is_treatment = is_treatment
     
     def generate_embedding(self, mean, variance):
         self.embed = np.random.multivariate_normal(mean, variance)
@@ -109,7 +108,7 @@ class Network:
     def initialize_node(self):
         for grp in self.group_lst:
             for node_idx, node_obj in grp.node_map.items():
-                self.G.add_node(node_obj.idx, vector=node_obj.embed, color=node_obj.color, age=node_obj.age, time=node_obj.time, is_treatment=node_obj.is_treatment, obj=node_obj)
+                self.G.add_node(node_obj.idx, vector=node_obj.embed, color=node_obj.color, age=node_obj.age, time=node_obj.time, is_treatment=False)
 
     # initialize the edges in graph by constant connection probability (color) or embedding affinity (embedding)
     def initialize_edge(self, how):
@@ -162,7 +161,7 @@ class Network:
         if node.embed is None:
             grp = self.group_lst[node.color]
             node.embed = np.random.multivariate_normal(grp.mean, grp.variance)
-        self.G.add_node(node.idx, vector=node.embed, color=node.color, age=node.age, time=node.time, is_treatment=node.is_treatment, obj=node)
+        self.G.add_node(node.idx, vector=node.embed, color=node.color, age=node.age, time=node.time, is_treatment=False)
         
     def add_edge(self, n1: int, n2: int, phase: str):
         assert not self.G.has_edge(n1, n2)
@@ -219,12 +218,10 @@ class Network:
     def assign_treatment(self, idx_list):
         for idx in idx_list:
             self.G.nodes[idx]['is_treatment'] = True
-            self.G.nodes[idx]['obj'].is_treatment = True
     
     def remove_treatment(self, idx_list):
         for idx in idx_list:
             self.G.nodes[idx]['is_treatment'] = False
-            self.G.nodes[idx]['obj'].is_treatment = False
     
     @property
     def edges(self):
