@@ -648,26 +648,31 @@ class Experiment:
             step_treatment = True
             assert self.treatment_probability == 1
         elif self.treatment_time == 0:
-            self.assign_treatment()
-            step_treatment = True
+            step_treatment = self.assign_treatment()
+            
 
         self.compute_metrics(0, initialize=True, **kwargs)
         self.dynamics.triadic_closure_init()
         for t in range(1, self.total_step+1):
             if self.is_ab_test and t == self.treatment_time:
-                self.assign_treatment()
-                step_treatment = True
+                step_treatment = self.assign_treatment()
             step_intervention = True if t in self.intervention_time else False
             self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, step_treatment, **kwargs)
             self.compute_metrics(t, **kwargs)
     
     def assign_treatment(self):
+        # if we are assigning treatment probabilistically, then we need to assign treatment at every step
         if self.treatment_probability > 0:
             flips = np.random.random_sample(size=self.dynamics.network.nodes) < self.treatment_probability
             treatment_nodes = [i for i, f in zip(range(self.dynamics.network.nodes), flips) if f]
-        elif self.treatment_size > 0:
+            self.dynamics.network.assign_treatment(treatment_nodes)
+            return True
+        # if we are assigning a fixed treatment size, then we only need to assign treatment at the beginning of the treatment
+        if self.treatment_size > 0:
             treatment_nodes = np.random.choice(range(self.dynamics.network.nodes), size=self.treatment_size, replace=False)
-        self.dynamics.network.assign_treatment(treatment_nodes)
+            self.dynamics.network.assign_treatment(treatment_nodes)
+            return False
+        
 
     def compute_metrics(self, time_step, **kwargs):
         freq = kwargs.get('freq', 1)
