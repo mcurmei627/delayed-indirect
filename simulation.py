@@ -374,24 +374,26 @@ class Dynamics:
         self.node_removal = kwargs.get('node_removal', True)
         self.treatment_probability = kwargs.get('treatment_probability', 1)
 
-    def step(self, nodes_step, idx, intervention, **kwargs):
+    def step(self, nodes_step, idx, intervention, treatment, **kwargs):
         # assume new node comes in proportional to groups' initial sizes
         arrival_probs = self.network.init_sizes/np.sum(self.network.init_sizes)
         new_nodes_grp = np.random.choice(len(self.grp_lst), size=nodes_step, p=arrival_probs)
 
-        if self.treatment_probability == 1:
-            treatments = list(range(idx, idx+nodes_step))
-        else:
-            flips = np.random.random_sample(size=nodes_step) < self.treatment_probability
-            treatments = [i for i, f in zip(range(idx, idx+nodes_step), flips) if f]
-        treatments.extend(kwargs.get('treatment_nodes', []))
+        if treatment:
+            if self.treatment_probability == 1:
+                treatment_nodes = list(range(idx, idx+nodes_step))
+            else:
+                flips = np.random.random_sample(size=nodes_step) < self.treatment_probability
+                treatment_nodes = [i for i, f in zip(range(idx, idx+nodes_step), flips) if f]
 
         for i in range(nodes_step):
             grp = self.grp_lst[new_nodes_grp[i]]
             node = grp.add_node(idx)
             self.step_natural_growth(node, self.ng_how, self.p2_mediated)
             idx += 1
-        self.network.assign_treatment(treatments)
+
+        if treatment:
+            self.network.assign_treatment(treatment_nodes)
 
         if intervention:
             self.intervention(**kwargs)
@@ -470,20 +472,16 @@ class Dynamics:
         self.rec_distance = kwargs.get('rec_distance', 2)
         self.edge_removal = kwargs.get('edge_removal', False)
 
+        # filter nodes that are not treatment nodes
+        node_lst = self.network.get_treatment_nodes()
         # sample nodes
         if self.rec_sample_size != None:
-            node_lst = copy.deepcopy(list(self.network.G.nodes))
             random.shuffle(node_lst)
             node_lst = node_lst[:self.rec_sample_size]
         elif self.rec_sample_fraction != None:
-            node_lst = copy.deepcopy(list(self.network.G.nodes))
             random.shuffle(node_lst)
             rec_sample_size = int(self.rec_sample_fraction * self.network.nodes)
             node_lst = node_lst[:rec_sample_size]
-        else: 
-            node_lst = self.network.G.nodes
-        # filter nodes that are not treatment nodes
-        node_lst = [node for node in node_lst if self.network.G.nodes[node]['is_treatment']]
         for idx in node_lst:
             candidate = self.recommend_edge(idx, self.rec_how, **kwargs)
             if candidate != None:
@@ -626,6 +624,7 @@ class Experiment:
         self.seed = kwargs.get('seed', 0)
         self.node_step = kwargs.get('node_step', 20)
         self.total_step = kwargs.get('total_step', 200)
+        self.is_ab_test = kwargs.get('is_ab_test', False)
         
         np.random.seed(self.seed)
         random.seed(self.seed)
@@ -640,20 +639,38 @@ class Experiment:
         self.dynamics = Dynamics(Network(group_lst, **kwargs), **kwargs)
 
     def run(self, **kwargs):
-        # make all nodes treament nodes
-        all_nodes = list(self.dynamics.network.G.nodes)
-        self.dynamics.network.assign_treatment(all_nodes)
-
         self.intervention_time = kwargs.get('intervention_time', list(range(self.total_step)))
+        self.treatment_probability = kwargs.get('treatment_probability', 1)
+        self.treatment_size = kwargs.get('treatment_size', 0)
+        self.treatment_time = kwargs.get('treatment_time', self.intervention_time[0])
+        # make all nodes treament nodes
+        step_treatment = False
+        if not self.is_ab_test:
+            all_nodes = list(self.dynamics.network.G.nodes)
+            self.dynamics.network.assign_treatment(all_nodes)
+            step_treatment = True
+            assert self.treatment_probability == 1
+        elif self.treatment_time == 0:
+            self.assign_treatment()
+            step_treatment = True
+
         self.compute_metrics(0, initialize=True, **kwargs)
         self.dynamics.triadic_closure_init()
         for t in range(1, self.total_step+1):
-            if t in self.intervention_time:
-                step_intervention = True
-            else:
-                step_intervention = False
-            self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, **kwargs)
+            if self.is_ab_test and t == self.treatment_time:
+                self.assign_treatment()
+                step_treatment = True
+            step_intervention = True if t in self.intervention_time else False
+            self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, step_treatment, **kwargs)
             self.compute_metrics(t, **kwargs)
+    
+    def assign_treatment(self):
+        if self.treatment_probability > 0:
+            flips = np.random.random_sample(size=self.dynamics.network.nodes) < self.treatment_probability
+            treatment_nodes = [i for i, f in zip(range(self.dynamics.network.nodes), flips) if f]
+        elif self.treatment_size > 0:
+            treatment_nodes = np.random.choice(range(self.dynamics.network.nodes), size=self.treatment_size, replace=False)
+        self.dynamics.network.assign_treatment(treatment_nodes)
 
     def compute_metrics(self, time_step, **kwargs):
         freq = kwargs.get('freq', 1)
@@ -767,36 +784,6 @@ class Experiment:
                     self.metrics[f"global_clustering_{i}"].append(self.dynamics.network.global_clustering(grp=grp))
                     self.metrics[f"gini_coeff_{i}"].append(self.dynamics.network.gini_coeff(grp=grp))
 
-class AB_Experiment(Experiment):
-    def __init__(self, grp_info: 'list[dict]', treatment_probability=0, treatment_size=0, **kwargs):
-        kwargs['treatment_probability'] = treatment_probability
-        super().__init__(grp_info, **kwargs)
-        # out of the initialized nodes: sample treatment_probability * total nodes to be treatment
-        # this need to modify the existing network at time step 0
-        # thoughout the dynamics; whenever a new node is added, toss a coin with probability treatment_probability
-        # and assign the node to the treatment group
-        # two options here: fixed number of treatment nodes or fixed proportion of treatment nodes
-        if treatment_probability:
-            assert treatment_probability <= 1
-            flips = np.random.random_sample(size=self.dynamics.network.nodes) < treatment_probability
-            self.treatment_nodes = [i for i, f in zip(range(self.dynamics.network.nodes), flips) if f]
-        elif treatment_size:
-            assert treatment_size <= self.dynamics.network.nodes
-            self.treatment_nodes = random.sample(list(self.dynamics.network.G), treatment_size)
-        self.dynamics.network.assign_treatment(self.treatment_nodes)
-        
-    def run(self, **kwargs):
-        self.intervention_time = kwargs.get('intervention_time', list(range(self.total_step)))
-        self.compute_metrics(0, initialize=True, **kwargs)
-        self.dynamics.triadic_closure_init()
-        for t in range(1, self.total_step+1):
-            step_intervention = True if t in self.intervention_time else False
-            # maybe modify step function to take in a list of nodes to be treated or a probability to be treated
-            # once the step completed look the new node and externally assign it to treatment group
-            self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, **kwargs)
-            self.compute_metrics(t, **kwargs)
-        
-
 
 """
 Conclusion class takes in a list of seeds to run a set of experiments. 
@@ -818,10 +805,7 @@ class Conclusion:
 
             self.initialize_metrics(**kwargs)
         for i in self.seeds:
-            if is_ab_test:
-                experiment = AB_Experiment(grp_info, seed=i, **kwargs)
-            else:
-                experiment = Experiment(grp_info, seed=i, **kwargs)
+            experiment = Experiment(grp_info, seed=i, **kwargs)
             # experiment.dynamics.network.plot_graph()
             experiment.run(**kwargs)
             # experiment.dynamics.network.plot_graph()
@@ -1076,7 +1060,7 @@ To run an experiment, there are 3 steps:
     
     options for conducting AB test:
         is_ab_test=False, 
-        treatment_probability=0, treatment_size=0
+        treatment_probability=0, treatment_size=0, treatment_time=intervention_time[0]
 '''
 if __name__ == "__main__":
     
