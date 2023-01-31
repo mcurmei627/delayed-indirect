@@ -378,10 +378,10 @@ class Dynamics:
 
         if treatment:
             if self.treatment_probability == 1:
-                treatment_nodes = list(range(idx, idx+nodes_step))
+                new_treatment_nodes = list(range(idx, idx+nodes_step))
             else:
                 flips = np.random.random_sample(size=nodes_step) < self.treatment_probability
-                treatment_nodes = [i for i, f in zip(range(idx, idx+nodes_step), flips) if f]
+                new_treatment_nodes = [i for i, f in zip(range(idx, idx+nodes_step), flips) if f]
 
         for i in range(nodes_step):
             grp = self.grp_lst[new_nodes_grp[i]]
@@ -390,7 +390,7 @@ class Dynamics:
             idx += 1
 
         if treatment:
-            self.network.assign_treatment(treatment_nodes)
+            self.network.assign_treatment(new_treatment_nodes)
 
         if intervention:
             self.intervention(**kwargs)
@@ -638,7 +638,7 @@ class Experiment:
     def run(self, **kwargs):
         self.intervention_time = kwargs.get('intervention_time', list(range(self.total_step)))
         self.treatment_probability = kwargs.get('treatment_probability', 1)
-        self.treatment_size = kwargs.get('treatment_size', 0)
+        self.treatment_size = kwargs.get('treatment_size', None)
         self.treatment_time = kwargs.get('treatment_time', self.intervention_time[0])
         # make all nodes treament nodes
         step_treatment = False
@@ -647,9 +647,10 @@ class Experiment:
             self.dynamics.network.assign_treatment(all_nodes)
             step_treatment = True
             assert self.treatment_probability == 1
-        elif self.treatment_time == 0:
-            step_treatment = self.assign_treatment()
-            
+        else:
+            assert (self.treatment_probability > 0) != (self.treatment_size is not None)   # Check only one is true
+            if self.treatment_time == 0:
+                step_treatment = self.assign_treatment()
 
         self.compute_metrics(0, initialize=True, **kwargs)
         self.dynamics.triadic_closure_init()
@@ -668,7 +669,7 @@ class Experiment:
             self.dynamics.network.assign_treatment(treatment_nodes)
             return True
         # if we are assigning a fixed treatment size, then we only need to assign treatment at the beginning of the treatment
-        if self.treatment_size > 0:
+        if self.treatment_size is not None:
             treatment_nodes = np.random.choice(range(self.dynamics.network.nodes), size=self.treatment_size, replace=False)
             self.dynamics.network.assign_treatment(treatment_nodes)
             return False
@@ -1062,7 +1063,7 @@ To run an experiment, there are 3 steps:
     
     options for conducting AB test:
         is_ab_test=False, 
-        treatment_probability=0, treatment_size=0, treatment_time=intervention_time[0]
+        treatment_probability=1, treatment_size=None, treatment_time=intervention_time[0]
 '''
 if __name__ == "__main__":
     
