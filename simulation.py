@@ -1,5 +1,6 @@
 from collections import defaultdict
 import scipy as sp
+from scipy import stats
 import numpy as np
 import networkx as nx
 import random
@@ -639,7 +640,7 @@ class Experiment:
         self.intervention_time = kwargs.get('intervention_time', list(range(self.total_step)))
         self.treatment_probability = kwargs.get('treatment_probability', 1)
         self.treatment_size = kwargs.get('treatment_size', None)
-        self.treatment_time = kwargs.get('treatment_time', self.intervention_time[0])
+        self.treatment_time = kwargs.get('treatment_time', 0 if len(self.intervention_time) == 0 else self.intervention_time[0])
         # make all nodes treament nodes
         step_treatment = False
         if not self.is_ab_test:
@@ -690,7 +691,7 @@ class Experiment:
         compute_gini = kwargs.get('comp_gini', True)
         compute_num_rec = kwargs.get('comp_num_rec', True)
         compute_num_acc = kwargs.get('comp_num_acc', True)
-        compute_grp_metrics = kwargs.get('comp_grp_metrics', False)
+        compute_grp_metrics = kwargs.get('comp_grp_metrics', True)
         
         metric_names = ['time', 'added_nodes', 'nodes', 'edges', 'avg_degree', 'degree_variance', 'bi_frac', 'global_clustering', 'avg_age', 'avg_nn', 'homophily', 'gini', 'num_rec', 'num_acc']
         phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
@@ -801,7 +802,6 @@ class Conclusion:
         self.experiments = []
         record_each_run = kwargs.get('record_each_run', True)
         plot = kwargs.get('plot', False)
-        is_ab_test = kwargs.get('is_ab_test', False)
         if plot or (not record_each_run):
             self.grp_num = len(grp_info)
             self.total_step = kwargs.get('total_step', 200)
@@ -845,7 +845,7 @@ class Conclusion:
         self.compute_gini = kwargs.get('comp_gini', True)
         self.compute_num_rec = kwargs.get('comp_num_rec', True)
         self.compute_num_acc = kwargs.get('comp_num_acc', True)
-        self.compute_grp_metrics = kwargs.get('comp_grp_metrics', False)
+        self.compute_grp_metrics = kwargs.get('comp_grp_metrics', True)
         
         self.avg_metrics = defaultdict(list)
         self.avg_metrics['time'] = []
@@ -935,8 +935,8 @@ class Conclusion:
     def mean_confidence_interval(self, data, confidence=0.95):
         a = 1.0 * np.array(data)
         m = np.average(a, axis=0)
-        se = sp.stats.sem(a, axis = 0)
-        h = se * sp.stats.t.ppf((1 + confidence) / 2., len(self.seeds)-1)
+        se = stats.sem(a, axis = 0)
+        h = se * stats.t.ppf((1 + confidence) / 2., len(self.seeds)-1)
         return m.tolist(), h.tolist()
     
     def add_stats(self, metric_name):
@@ -1055,7 +1055,7 @@ To run an experiment, there are 3 steps:
     options for computing each metric (True by default): 
         freq=1
         comp_nodes, comp_edges, comp_degree, comp_degvar, comp_bifrac, comp_cluster, comp_age, comp_nn, comp_homop, comp_gini
-        comp_grp_metrics=False (compute avg_degree, degree_var, gini_coeff, clustering for each group)
+        comp_grp_metrics=True (compute avg_degree, degree_var, gini_coeff, clustering for each group)
 
     options for collecting metrics:
         record_each_run=True
@@ -1078,7 +1078,7 @@ if __name__ == "__main__":
     b = 5
     beta = 10
 
-    conclusion = Conclusion(list(range(1)))
+    conclusion = Conclusion(list(range(3)))
     grp_info = [{'mean': mu1, 'variance': sigma1*np.identity(2), 'size': N1},
                 {'mean': mu2, 'variance': sigma2*np.identity(2), 'size': N2}]
     conclusion.run_experiments(grp_info, plot=False, init_how='embedding', Ns=N1+N2, Nf=10, 
