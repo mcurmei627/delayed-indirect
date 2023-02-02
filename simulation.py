@@ -1,5 +1,6 @@
 from collections import defaultdict
 import scipy as sp
+from scipy import stats
 import numpy as np
 import networkx as nx
 import random
@@ -110,7 +111,7 @@ class Network:
     def initialize_node(self):
         for grp in self.group_lst:
             for node_idx, node_obj in grp.node_map.items():
-                self.G.add_node(node_obj.idx, vector=node_obj.embed, color=node_obj.color, age=node_obj.age, time=node_obj.time)
+                self.G.add_node(node_obj.idx, vector=node_obj.embed, color=node_obj.color, age=node_obj.age, time=node_obj.time, is_treatment=False)
 
     # initialize the edges in graph by constant connection probability (color) or embedding affinity (embedding)
     def initialize_edge(self, how):
@@ -163,7 +164,7 @@ class Network:
         if node.embed is None:
             grp = self.group_lst[node.color]
             node.embed = np.random.multivariate_normal(grp.mean, grp.variance)
-        self.G.add_node(node.idx, vector=node.embed, color=node.color, age=node.age, time=node.time, obj=node)
+        self.G.add_node(node.idx, vector=node.embed, color=node.color, age=node.age, time=node.time, is_treatment=False)
         
     def add_edge(self, n1: int, n2: int, phase: str):
         assert not self.G.has_edge(n1, n2)
@@ -209,7 +210,7 @@ class Network:
         return [(u, v, p) for u, v, p in adamic_adar_triples]
 
     def get_dist_nodes(self, node, dist):
-        return nx.descendants_at_distance(self.G, node, dist)
+        return nx.descendants_at_distance(self.G, node, dist)        
     
     def get_treatment_nodes(self):
         return [n for n in self.G.nodes if self.G.nodes[n]['is_treatment']]
@@ -218,14 +219,12 @@ class Network:
         return [n for n in self.G.nodes if not self.G.nodes[n]['is_treatment']]
     
     def assign_treatment(self, idx_list):
-        # for idx in idx_list:
-        #     self.G.nodes[idx]['is_treatment'] = True
-        raise NotImplementedError
+        for idx in idx_list:
+            self.G.nodes[idx]['is_treatment'] = True
     
     def remove_treatment(self, idx_list):
-        # for idx in idx_list:
-        #     self.G.nodes[idx]['is_treatment'] = False
-        raise NotImplementedError
+        for idx in idx_list:
+            self.G.nodes[idx]['is_treatment'] = False
     
     @property
     def edges(self):
@@ -236,9 +235,8 @@ class Network:
         return self.G.number_of_nodes()
     
     @property
-    def treatment_nodes(self):
-        # how many treatment nodes are there
-        raise NotImplementedError
+    def num_treatment_nodes(self):
+        return len(self.get_treatment_nodes())
 
     def global_clustering(self, grp=None, idx_list=None):
         # handle idx_list for every metric
@@ -246,6 +244,10 @@ class Network:
             color = grp.color
             clustering_coeff = [nx.algorithms.cluster.clustering(self.G, n) for n in self.G.nodes() if self.G.nodes[n]['color'] == color]
             return sum(clustering_coeff) / grp.size
+        
+        if idx_list:
+            clustering_coeff = [nx.algorithms.cluster.clustering(self.G, n) for n in idx_list]
+            return sum(clustering_coeff) / len(idx_list)
         
         clustering_coeff = [nx.algorithms.cluster.clustering(self.G, n) for n in self.G.nodes()]
         return sum(clustering_coeff) / self.nodes
@@ -259,19 +261,22 @@ class Network:
             centralities = {k: (v - min_val) / (max_val - min_val) for k, v in centralities.items()}
         return centralities
 
-    def avg_degree(self, grp=None):
+    def avg_degree(self, grp=None, idx_list=None):
         degree_list = list(self.G.degree())
         if grp:
             color = grp.color
             degree_list = [(n,d) for n, d in degree_list if self.G.nodes[n]['color'] == color]
-            
+        if idx_list:
+            degree_list = [(n,d) for n, d in degree_list if n in idx_list]
         return np.mean([i[1] for i in degree_list])
 
-    def degree_var(self, grp=None):
+    def degree_var(self, grp=None, idx_list=None):
         degree_list = list(self.G.degree())
         if grp:
             color = grp.color
             degree_list = [(n,d) for n, d in degree_list if self.G.nodes[n]['color'] == color]
+        if idx_list:
+            degree_list = [(n,d) for n, d in degree_list if n in idx_list]
         return np.mean([(i[1] - self.avg_degree(grp)) ** 2 for i in degree_list])
     
     @property
@@ -293,13 +298,13 @@ class Network:
         edge_matrix = self.edge_matrix_phase[phase]
         return edge_matrix[0][0] + edge_matrix[1][1], edge_matrix[0][1]
 
-    def gini_coeff(self, nodes_subset=None, grp=None):
-        if nodes_subset:
-            raise NotImplementedError
+    def gini_coeff(self, grp=None, idx_list=None):
         degree_list = list(self.G.degree())
         if grp:
             color = grp.color
             degree_list = [(n,d) for n, d in degree_list if self.G.nodes[n]['color'] == color]
+        if idx_list:
+            degree_list = [(n,d) for n, d in degree_list if n in idx_list]
         degree_list = [d for _, d in degree_list]
         degree_list = np.sort(degree_list)
         n = len(degree_list)
@@ -367,16 +372,29 @@ class Dynamics:
         self.Ns = kwargs.get('Ns', None)
         self.Nf = kwargs.get('Nf', None)
         self.node_removal = kwargs.get('node_removal', True)
+        self.treatment_probability = kwargs.get('treatment_probability', 1)
 
-    def step(self, nodes_step, idx, intervention, **kwargs):
+    def step(self, nodes_step, idx, intervention, treatment, **kwargs):
         # assume new node comes in proportional to groups' initial sizes
         arrival_probs = self.network.init_sizes/np.sum(self.network.init_sizes)
         new_nodes_grp = np.random.choice(len(self.grp_lst), size=nodes_step, p=arrival_probs)
+
+        if treatment:
+            if self.treatment_probability == 1:
+                new_treatment_nodes = list(range(idx, idx+nodes_step))
+            else:
+                flips = np.random.random_sample(size=nodes_step) < self.treatment_probability
+                new_treatment_nodes = [i for i, f in zip(range(idx, idx+nodes_step), flips) if f]
+
         for i in range(nodes_step):
             grp = self.grp_lst[new_nodes_grp[i]]
             node = grp.add_node(idx)
             self.step_natural_growth(node, self.ng_how, self.p2_mediated)
             idx += 1
+
+        if treatment:
+            self.network.assign_treatment(new_treatment_nodes)
+
         if intervention:
             self.intervention(**kwargs)
         self.time_increment()
@@ -454,20 +472,16 @@ class Dynamics:
         self.rec_distance = kwargs.get('rec_distance', 2)
         self.edge_removal = kwargs.get('edge_removal', False)
 
+        # filter nodes that are not treatment nodes
+        node_lst = self.network.get_treatment_nodes()
         # sample nodes
         if self.rec_sample_size != None:
-            node_lst = copy.deepcopy(list(self.network.G.nodes))
             random.shuffle(node_lst)
             node_lst = node_lst[:self.rec_sample_size]
         elif self.rec_sample_fraction != None:
-            node_lst = copy.deepcopy(list(self.network.G.nodes))
             random.shuffle(node_lst)
             rec_sample_size = int(self.rec_sample_fraction * self.network.nodes)
             node_lst = node_lst[:rec_sample_size]
-        else: 
-            node_lst = self.network.G.nodes
-        # filter nodes that are not treatment nodes
-        # node_lst = [node for node in node_lst if self.network.G.nodes[node]['is_treatment'] == True]
         for idx in node_lst:
             candidate = self.recommend_edge(idx, self.rec_how, **kwargs)
             if candidate != None:
@@ -610,6 +624,7 @@ class Experiment:
         self.seed = kwargs.get('seed', 0)
         self.node_step = kwargs.get('node_step', 20)
         self.total_step = kwargs.get('total_step', 200)
+        self.is_ab_test = kwargs.get('is_ab_test', False)
         
         np.random.seed(self.seed)
         random.seed(self.seed)
@@ -625,18 +640,43 @@ class Experiment:
 
     def run(self, **kwargs):
         self.intervention_time = kwargs.get('intervention_time', list(range(self.total_step)))
+        self.treatment_probability = kwargs.get('treatment_probability', 1)
+        self.treatment_size = kwargs.get('treatment_size', None)
+        self.treatment_time = kwargs.get('treatment_time', 0 if len(self.intervention_time) == 0 else self.intervention_time[0])
+        # make all nodes treament nodes
+        step_treatment = False
+        if not self.is_ab_test:
+            all_nodes = list(self.dynamics.network.G.nodes)
+            self.dynamics.network.assign_treatment(all_nodes)
+            step_treatment = True
+            assert self.treatment_probability == 1
+        else:
+            assert (self.treatment_probability > 0) != (self.treatment_size is not None)   # Check only one is true
+            if self.treatment_time == 0:
+                step_treatment = self.assign_treatment()
+
         self.compute_metrics(0, initialize=True, **kwargs)
         self.dynamics.triadic_closure_init()
         for t in range(1, self.total_step+1):
-            if t in self.intervention_time:
-                step_intervention = True
-                # make all nodes treament nodes
-                # all_nodes = list(self.dynamics.network.G.nodes)
-                # self.dynamics.network.assign_treatment(all_nodes)
-            else:
-                step_intervention = False
-            self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, **kwargs)
+            if self.is_ab_test and t == self.treatment_time:
+                step_treatment = self.assign_treatment()
+            step_intervention = True if t in self.intervention_time else False
+            self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, step_treatment, **kwargs)
             self.compute_metrics(t, **kwargs)
+    
+    def assign_treatment(self):
+        # if we are assigning treatment probabilistically, then we need to assign treatment at every step
+        if self.treatment_probability > 0:
+            flips = np.random.random_sample(size=self.dynamics.network.nodes) < self.treatment_probability
+            treatment_nodes = [i for i, f in zip(range(self.dynamics.network.nodes), flips) if f]
+            self.dynamics.network.assign_treatment(treatment_nodes)
+            return True
+        # if we are assigning a fixed treatment size, then we only need to assign treatment at the beginning of the treatment
+        if self.treatment_size is not None:
+            treatment_nodes = np.random.choice(range(self.dynamics.network.nodes), size=self.treatment_size, replace=False)
+            self.dynamics.network.assign_treatment(treatment_nodes)
+            return False
+        
 
     def compute_metrics(self, time_step, **kwargs):
         freq = kwargs.get('freq', 1)
@@ -653,40 +693,25 @@ class Experiment:
         compute_gini = kwargs.get('comp_gini', True)
         compute_num_rec = kwargs.get('comp_num_rec', True)
         compute_num_acc = kwargs.get('comp_num_acc', True)
-        compute_grp_metrics = kwargs.get('comp_grp_metrics', False)
+        compute_grp_metrics = kwargs.get('comp_grp_metrics', True)
         
-        #metric_names = ['nodes', 'edges', 'avg_degree', 'degree_variance', 'bi_frac', 'global_clustering', 'avg_age', 'avg_nn', 'homophily', 'gini', 'num_rec', 'num_acc']
-        # for metric in metric_names:
-        #     bla
-
+        metric_names = ['time', 'added_nodes', 'nodes', 'edges', 'avg_degree', 'degree_variance', 'bi_frac', 'global_clustering', 'avg_age', 'avg_nn', 'homophily', 'gini', 'num_rec', 'num_acc']
+        phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
+        group_metrics = ['nodes', 'homophily', 'avg_degree', 'degree_variance', 'global_clustering', 'gini_coeff']
+        rec_metrics = ['rec_how', 'rec_sample_size', 'rec_distance', 'acc_how', 'acc_prob', 'edge_removal']
+        
         if time_step == 0:
             
             self.metrics = defaultdict(list)
-            self.metrics['time'] = []
-            self.metrics['added_nodes'] = []
-            self.metrics['nodes'] = []
-            self.metrics['edges'] = []
-            phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
+            for metric in metric_names:
+                self.metrics[metric] = []
             for p in phases:
                 self.metrics[p] = []
                 self.metrics[f"{p}_mono"] = []
                 self.metrics[f"{p}_bi"] = []
-            self.metrics['avg_degree'] = []
-            self.metrics['degree_variance'] = []
-            self.metrics['bi_frac'] = []
-            self.metrics['global_clustering'] = []
-            self.metrics['avg_age'] = []
-            self.metrics['avg_nn'] = []
-            self.metrics['gini_coeff'] = []
-            self.metrics['num_rec'] = []
-            self.metrics['num_acc'] = []
             for i in range(len(self.dynamics.grp_lst)):
-                self.metrics[f"nodes_{i}"] = []
-                self.metrics[f"homophily_{i}"] = []
-                self.metrics[f"avg_degree_{i}"] = []
-                self.metrics[f"degree_variance_{i}"] = []
-                self.metrics[f"global_clustering_{i}"] = []
-                self.metrics[f"gini_coeff_{i}"] = []
+                for metric in group_metrics:
+                    self.metrics[f"{metric}_{i}"] = []
         
         if time_step == 1:
             self.metrics['a'] = self.dynamics.a
@@ -707,12 +732,8 @@ class Experiment:
             self.metrics['seed'] = self.seed
         
         if len(self.intervention_time) == 0:
-            self.metrics['rec_how'] = None
-            self.metrics['rec_sample_size'] = None
-            self.metrics['rec_distance'] = None
-            self.metrics['acc_how'] = None
-            self.metrics['acc_prob'] = None
-            self.metrics['edge_removal'] = None
+            for metric in rec_metrics:
+                self.metrics[metric] = None
 
         elif time_step == self.intervention_time[0] + 1:
             self.metrics['rec_how'] = self.dynamics.rec_how
@@ -769,32 +790,6 @@ class Experiment:
                     self.metrics[f"global_clustering_{i}"].append(self.dynamics.network.global_clustering(grp=grp))
                     self.metrics[f"gini_coeff_{i}"].append(self.dynamics.network.gini_coeff(grp=grp))
 
-class AB_Experiment(Experiment):
-    def __init__(self, grp_info: 'list[dict]', treatment_probability, **kwargs):
-        super().__init__(grp_info, **kwargs)
-        self.treatment_nodes = []
-        # out of the initialized nodes: sample treatment_probability * total nodes to be treatment
-        # this need to modify the existingting network at time step 0
-        # thouglout the dynamics; whenever a new node is added, toss a coin with probability treatment_probability
-        # and assign the node to the treatment group
-        
-        # two options here: fixed number of treatment nodes or fixed proportion of treatment nodes
-        
-    def run(self, **kwargs):
-        self.intervention_time = kwargs.get('intervention_time', list(range(self.total_step)))
-        self.compute_metrics(0, initialize=True, **kwargs)
-        self.dynamics.triadic_closure_init()
-        for t in range(1, self.total_step+1):
-            if t in self.intervention_time:
-                step_intervention = True
-                # maybe modify step function to take in a list of nodes to be treated or a probability to be treated
-                # once the step completed look the new node and externally assign it to treatment group
-            else:
-                step_intervention = False
-            self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, **kwargs)
-            self.compute_metrics(t, **kwargs)
-        
-        
 
 """
 Conclusion class takes in a list of seeds to run a set of experiments. 
@@ -852,7 +847,7 @@ class Conclusion:
         self.compute_gini = kwargs.get('comp_gini', True)
         self.compute_num_rec = kwargs.get('comp_num_rec', True)
         self.compute_num_acc = kwargs.get('comp_num_acc', True)
-        self.compute_grp_metrics = kwargs.get('comp_grp_metrics', False)
+        self.compute_grp_metrics = kwargs.get('comp_grp_metrics', True)
         
         self.avg_metrics = defaultdict(list)
         self.avg_metrics['time'] = []
@@ -942,8 +937,8 @@ class Conclusion:
     def mean_confidence_interval(self, data, confidence=0.95):
         a = 1.0 * np.array(data)
         m = np.average(a, axis=0)
-        se = sp.stats.sem(a, axis = 0)
-        h = se * sp.stats.t.ppf((1 + confidence) / 2., len(self.seeds)-1)
+        se = stats.sem(a, axis = 0)
+        h = se * stats.t.ppf((1 + confidence) / 2., len(self.seeds)-1)
         return m.tolist(), h.tolist()
     
     def add_stats(self, metric_name):
@@ -1062,28 +1057,40 @@ To run an experiment, there are 3 steps:
     options for computing each metric (True by default): 
         freq=1
         comp_nodes, comp_edges, comp_degree, comp_degvar, comp_bifrac, comp_cluster, comp_age, comp_nn, comp_homop, comp_gini
-        comp_grp_metrics=False (compute avg_degree, degree_var, gini_coeff, clustering for each group)
+        comp_grp_metrics=True (compute avg_degree, degree_var, gini_coeff, clustering for each group)
 
     options for collecting metrics:
         record_each_run=True
         plot=False
+    
+    options for conducting AB test:
+        is_ab_test=False, 
+        treatment_probability=1, treatment_size=None, treatment_time=intervention_time[0]
 '''
 if __name__ == "__main__":
     
     # An example of running the experiments
     mu1 = np.array([0,1])
     mu2 = np.array([1,0])
-    N1 = 100
-    N2 = 100
+    N1 = 50
+    N2 = 50
     sigma1 = 0.05
     sigma2 = 0.05
     a = 2
     b = 5
+    beta = 10
+
     conclusion = Conclusion(list(range(3)))
     grp_info = [{'mean': mu1, 'variance': sigma1*np.identity(2), 'size': N1},
                 {'mean': mu2, 'variance': sigma2*np.identity(2), 'size': N2}]
-    conclusion.run_experiments(grp_info, plot=True, init_how='embedding', Ns=N1+N2, Nf=100, 
-                            node_step=20, total_step=1000, acc_how='embedding',acc_prob=50, a=a, b=b,
-                            ng_how='embedding', intervention_time=list(range(0, 500)),
-                            rec_how='embedding',
-                            freq=5, record_each_run=False, rec_sample_size=200)
+    conclusion.run_experiments(grp_info, plot=False, init_how='embedding', Ns=N1+N2, Nf=10, 
+                            node_step=5, total_step=400, acc_how='constant',acc_prob=0.5, a=a, b=b,
+                            beta=beta,
+                            p2_prob=0.5,
+                            ng_how='embedding', 
+                            intervention_time=list(range(50, 200)),
+                            rec_how='random_fof',
+                            node_removal=False,
+                            edge_removal=False,
+                            freq=5, record_each_run=False, rec_sample_fraction=0.1,
+                            is_ab_test=True, treatment_probability=0.1)
