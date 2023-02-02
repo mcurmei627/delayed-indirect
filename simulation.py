@@ -18,12 +18,13 @@ Node class stores node attributes:
     - time, the duration of time it has been added to the graph.
 """
 class Node:
-    def __init__(self, idx, color=None, embed=None, age=None):
+    def __init__(self, idx, color=None, embed=None, age=None, is_treatment=False):
         self.idx = idx
         self.color = color
         self.embed = embed
         self.age = age
         self.time = 0
+        self.is_treatment = is_treatment
     
     def generate_embedding(self, mean, variance):
         self.embed = np.random.multivariate_normal(mean, variance)
@@ -53,6 +54,7 @@ class Group:
             self.node_map[node_ids[i]] = node
     
     def add_node(self, idx):
+        # do we add is_treatment property here?
         assert idx not in self.node_map
         embedding = np.random.multivariate_normal(self.mean, self.variance)
         node = Node(idx, color=self.color, embed=embedding, age=self.sample_age_distribution())
@@ -445,17 +447,17 @@ class Dynamics:
             for i in dist2_nodes:
                 accept = self.accept_edge(node.idx, i, how='constant', acc_prob=self.p2_prob)
                 if accept:
-                    indirect = True
+                    mediated = True
                     for common_neighbor in nx.common_neighbors(self.network.G, node.idx, i):
                         if (common_neighbor, i) in edge_phases:
                             if edge_phases[(common_neighbor, i)] != 'rec':
-                                indirect = False
+                                mediated = False
                                 break
                         else:
                             if edge_phases[(i, common_neighbor)] != 'rec':
-                                indirect = False
+                                mediated = False
                                 break
-                    if indirect:
+                    if mediated:
                         self.network.add_edge(node.idx, i, 'ngp2_mediated')
                     else:
                         self.network.add_edge(node.idx, i, 'ngp2_unmediated')

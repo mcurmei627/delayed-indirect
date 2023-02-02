@@ -42,6 +42,14 @@ def run(setting, rec_how, acc_how, intervention_end=None, node_removal=False, ed
         N2 = 40
         sigma1 = 0.03
         sigma2 = 0.005
+    
+    elif setting == 'homo+hetero':
+        mu1 = np.array([0,1])
+        mu2 = np.array([1.1,0])
+        N1 = 50
+        N2 = 50
+        sigma1 = 0.01
+        sigma2 = 0.1
         
     if intervention_end == None:
         intervention_time = []
@@ -77,10 +85,12 @@ def run(setting, rec_how, acc_how, intervention_end=None, node_removal=False, ed
     with open(fname, 'wb') as f:
         pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
 
-settings = ['heterogeneity', 'homogeneity', 'minority_homophily', 'majority_heterophily']        
+settings = ['heterogeneity', 'homogeneity', 'minority_homophily', 'majority_heterophily']   
+settings = ['homo+hetero']     
 rec_how  = ['embedding', 'random_fof']
-acc_how = ['constant']
-intervention_end = list(range(50, 401, 100))
+acc_how = ['constant', 'embedding']
+intervention_end = list(range(100, 401, 100))
+intervention_end.append(50)
 node_removal = [True, False]
 edge_removal = [True, False]
 p2_mediated = [True, False]
