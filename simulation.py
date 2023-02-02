@@ -429,17 +429,17 @@ class Dynamics:
             for i in dist2_nodes:
                 accept = self.accept_edge(node.idx, i, how='constant', acc_prob=self.p2_prob)
                 if accept:
-                    indirect = True
+                    mediated = True
                     for common_neighbor in nx.common_neighbors(self.network.G, node.idx, i):
                         if (common_neighbor, i) in edge_phases:
                             if edge_phases[(common_neighbor, i)] != 'rec':
-                                indirect = False
+                                mediated = False
                                 break
                         else:
                             if edge_phases[(i, common_neighbor)] != 'rec':
-                                indirect = False
+                                mediated = False
                                 break
-                    if indirect:
+                    if mediated:
                         self.network.add_edge(node.idx, i, 'ngp2_mediated')
                     else:
                         self.network.add_edge(node.idx, i, 'ngp2_unmediated')

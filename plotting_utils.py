@@ -10,8 +10,8 @@ def smooth(y, box_pts):
 def plot_context():
     TITLE_SIZE = 25
     LABEL_SIZE = 20
-    LEGEND_TITLE_SIZE = 18
-    LEGEND_SIZE = 15
+    LEGEND_TITLE_SIZE = 20
+    LEGEND_SIZE = 18
     TICK_SIZE = 15
     FONT = 'serif'
     params = {}
@@ -133,3 +133,8 @@ def plot_diff_frac(unmed_clist, med_clist, metric, nat_idx, ax=None, pretty_name
     ax.set_xlim(plot_range)
     ax.set(xlabel='Time', ylabel=metric if pretty_name is None else pretty_name)
     return ax
+
+def save_fig(fig, name, folder='figures'):
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    fig.savefig(f'{folder}/{name}.pdf', bbox_inches='tight')
