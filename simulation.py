@@ -712,6 +712,10 @@ class Experiment:
             for i in range(len(self.dynamics.grp_lst)):
                 for metric in group_metrics:
                     self.metrics[f"{metric}_{i}"] = []
+            if self.is_ab_test:
+                for metric in group_metrics:
+                    self.metrics[f"{metric}_treatment"] = []
+                    self.metrics[f"{metric}_control"] = []
         
         if time_step == 1:
             self.metrics['a'] = self.dynamics.a
@@ -730,6 +734,8 @@ class Experiment:
             self.metrics['total_step'] = self.total_step
             self.metrics['node_removal'] = self.dynamics.node_removal
             self.metrics['seed'] = self.seed
+            if self.is_ab_test:
+                self.metrics['treatment_probability'] = self.treatment_probability
         
         if len(self.intervention_time) == 0:
             for metric in rec_metrics:
@@ -778,6 +784,7 @@ class Experiment:
             if compute_num_acc:
                 self.metrics['num_acc'].append(self.dynamics.num_acc)
 
+            # add group metrics
             for i in range(len(self.dynamics.grp_lst)):
                 grp = self.dynamics.grp_lst[i]
                 if compute_nodes:
@@ -789,6 +796,17 @@ class Experiment:
                     self.metrics[f"degree_variance_{i}"].append(self.dynamics.network.degree_var(grp=grp))
                     self.metrics[f"global_clustering_{i}"].append(self.dynamics.network.global_clustering(grp=grp))
                     self.metrics[f"gini_coeff_{i}"].append(self.dynamics.network.gini_coeff(grp=grp))
+                    
+            # add treatment/control metrics
+            if self.is_ab_test:
+                treatment_nodes = self.dynamics.network.get_treatment_nodes()
+                control_nodes = self.dynamics.network.get_control_nodes()
+                nodes_dict = {'treatment': treatment_nodes, 'control': control_nodes}
+                for condition in ['treatment', 'control']:
+                    self.metrics[f"avg_degree_{condition}"].append(self.dynamics.network.avg_degree(idx_list=nodes_dict[condition]))
+                    self.metrics[f"degree_variance_{condition}"].append(self.dynamics.network.degree_var(idx_list=nodes_dict[condition]))
+                    self.metrics[f"global_clustering_{condition}"].append(self.dynamics.network.global_clustering(idx_list=nodes_dict[condition]))
+                    self.metrics[f"gini_coeff_{condition}"].append(self.dynamics.network.gini_coeff(idx_list=nodes_dict[condition]))
 
 
 """
@@ -848,6 +866,7 @@ class Conclusion:
         self.compute_num_rec = kwargs.get('comp_num_rec', True)
         self.compute_num_acc = kwargs.get('comp_num_acc', True)
         self.compute_grp_metrics = kwargs.get('comp_grp_metrics', True)
+        self.is_ab_test = kwargs.get('is_ab_test', False)
         
         self.avg_metrics = defaultdict(list)
         self.avg_metrics['time'] = []
@@ -891,6 +910,12 @@ class Conclusion:
                 self.avg_metrics[f"degree_variance_{i}"] = []
                 self.avg_metrics[f"global_clustering_{i}"] = []
                 self.avg_metrics[f"gini_coeff_{i}"] = []
+        if self.is_ab_test:
+            for condition in ['control', 'treatment']:
+                self.avg_metrics[f"avg_degree_{condition}"] = []
+                self.avg_metrics[f"degree_variance_{condition}"] = []
+                self.avg_metrics[f"global_clustering_{condition}"] = []
+                self.avg_metrics[f"gini_coeff_{condition}"] = []
 
     def add_metrics(self, experiment: Experiment):
         exp_metrics = experiment.metrics
@@ -933,6 +958,12 @@ class Conclusion:
                 self.avg_metrics[f"degree_variance_{i}"].append(exp_metrics[f"degree_variance_{i}"])
                 self.avg_metrics[f"global_clustering_{i}"].append(exp_metrics[f"global_clustering_{i}"])
                 self.avg_metrics[f"gini_coeff_{i}"].append(exp_metrics[f"gini_coeff_{i}"])
+        if self.is_ab_test:
+            for condition in ['control', 'treatment']:
+                self.avg_metrics[f"avg_degree_{condition}"].append(exp_metrics[f"avg_degree_{condition}"])
+                self.avg_metrics[f"degree_variance_{condition}"].append(exp_metrics[f"degree_variance_{condition}"])
+                self.avg_metrics[f"global_clustering_{condition}"].append(exp_metrics[f"global_clustering_{condition}"])
+                self.avg_metrics[f"gini_coeff_{condition}"].append(exp_metrics[f"gini_coeff_{condition}"])
     
     def mean_confidence_interval(self, data, confidence=0.95):
         a = 1.0 * np.array(data)
@@ -988,6 +1019,12 @@ class Conclusion:
                 self.add_stats(f"degree_variance_{i}")
                 self.add_stats(f"global_clustering_{i}")
                 self.add_stats(f"gini_coeff_{i}")
+        if self.is_ab_test:
+            for condition in ['control', 'treatment']:
+                self.add_stats(f"avg_degree_{condition}")
+                self.add_stats(f"degree_variance_{condition}")
+                self.add_stats(f"global_clustering_{condition}")
+                self.add_stats(f"gini_coeff_{condition}")
     
     def plot_avg_metrics(self):
         fig, axs = plt.subplots(4, 4, figsize=(25, 20))
@@ -1080,7 +1117,7 @@ if __name__ == "__main__":
     b = 5
     beta = 10
 
-    conclusion = Conclusion(list(range(3)))
+    conclusion = Conclusion(list(range(1)))
     grp_info = [{'mean': mu1, 'variance': sigma1*np.identity(2), 'size': N1},
                 {'mean': mu2, 'variance': sigma2*np.identity(2), 'size': N2}]
     conclusion.run_experiments(grp_info, plot=False, init_how='embedding', Ns=N1+N2, Nf=10, 
@@ -1094,3 +1131,4 @@ if __name__ == "__main__":
                             edge_removal=False,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1,
                             is_ab_test=True, treatment_probability=0.1)
+    print(conclusion.avg_values)
