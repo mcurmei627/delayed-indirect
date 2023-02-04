@@ -720,7 +720,7 @@ class Experiment:
     def assign_treatment(self):
         # if we are assigning treatment to groups, then we need to assign treatment at every step
         if isinstance(self.treatment_probability, list):
-            treatment_nodes = [i for i in self.G.nodes if self.G.nodes[i]['color'] in self.treatment_probability]
+            treatment_nodes = [i for i in self.dynamics.network.G.nodes if self.dynamics.network.G.nodes[i]['color'] in self.treatment_probability]
             self.dynamics.network.assign_treatment(treatment_nodes)
             return True
         # if we are assigning treatment probabilistically, then we need to assign treatment at every step

@@ -17,6 +17,7 @@ b = 5
 acc_prob=0.5
 beta=10
 
+#  if treated_how == 'group', then treament prob will be either [0] or [1]
 def run(rec_how, acc_how, intervention_end=None, node_removal=False, edge_removal=False, treatment_probability=0.5):
     if intervention_end == None:
         intervention_time = []
@@ -47,6 +48,8 @@ def run(rec_how, acc_how, intervention_end=None, node_removal=False, edge_remova
     folder_name = 'experiments/exp_ab'
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
+    if isinstance(treatment_probability, list):
+        treatment_probability = f'group{treatment_probability[0]}'
     fname = f'{folder_name}/{rec_how}_{acc_how}_{intervention_end}_{node_removal}_{edge_removal}_{treatment_probability}.pkl'
     with open(fname, 'wb') as f:
         pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
