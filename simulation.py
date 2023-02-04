@@ -443,7 +443,7 @@ class Dynamics:
                 new_treatment_nodes = list(range(idx-nodes_step, idx))
             elif self.treatment_probability > 0:
                 flips = np.random.random_sample(size=nodes_step) < self.treatment_probability
-                new_treatment_nodes = [i for i, f in zip(range(idx, idx+nodes_step), flips) if f]
+                new_treatment_nodes = [i for i, f in zip(range(idx-nodes_step, idx), flips) if f]
             self.network.assign_treatment(new_treatment_nodes)
 
         if intervention:
