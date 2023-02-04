@@ -246,6 +246,10 @@ class Network:
     @property
     def num_treatment_nodes(self):
         return len(self.treatment_group)
+    
+    @property
+    def num_control_nodes(self):
+        return len(self.get_control_nodes())
 
     def global_clustering(self, grp=None, idx_list=None, ab_naive=True):
         if grp == 'treatment' or grp == "control":
@@ -350,11 +354,20 @@ class Network:
         return gini
         
     def homophily(self, grp, ab_naive=True):
-        color = grp.color
-        if ab_naive:
-            return self.edge_matrix[color][color] / np.sum(self.edge_matrix, axis=0)[color] - grp.size / self.nodes
+        # group 0 is treatment, group 1 is control
+        if grp == 'treatment':
+            if ab_naive:
+                print("treatment", self.num_treatment_nodes, self.nodes)
+                return self.edge_matrix[0][0] / np.sum(self.edge_matrix, axis=0)[0] - self.num_treatment_nodes / self.nodes
+            else:
+                print("control", self.num_control_nodes, self.nodes)
+                return (self.edge_matrix[0][0] - self.edge_matrix_3[0][0]) / (np.sum(self.edge_matrix, axis=0)[0] - np.sum(self.edge_matrix_3, axis=0)[0]) - self.num_treatment_nodes / self.nodes
+        elif grp == 'control':
+            return self.edge_matrix[1][1] / np.sum(self.edge_matrix, axis=0)[1] - self.num_control_nodes / self.nodes
         else:
-            return (self.edge_matrix[color][color] - self.edge_matrix_3[color][color]) / (np.sum(self.edge_matrix, axis=0)[color] - np.sum(self.edge_matrix_3, axis=0)[color]) - grp.size / self.nodes
+            color = grp.color
+            print(f"color {color}", grp.size, self.nodes)
+            return self.edge_matrix[color][color] / np.sum(self.edge_matrix, axis=0)[color] - grp.size / self.nodes
     
     def sigmoid(self, n):
         return 1/(1 + np.exp(-n * self.a + self.b))
@@ -420,13 +433,6 @@ class Dynamics:
         arrival_probs = self.network.init_sizes/np.sum(self.network.init_sizes)
         new_nodes_grp = np.random.choice(len(self.grp_lst), size=nodes_step, p=arrival_probs)
 
-        if treatment:
-            if self.treatment_probability == 1:
-                new_treatment_nodes = list(range(idx, idx+nodes_step))
-            else:
-                flips = np.random.random_sample(size=nodes_step) < self.treatment_probability
-                new_treatment_nodes = [i for i, f in zip(range(idx, idx+nodes_step), flips) if f]
-
         for i in range(nodes_step):
             grp = self.grp_lst[new_nodes_grp[i]]
             node = grp.add_node(idx)
@@ -434,6 +440,13 @@ class Dynamics:
             idx += 1
 
         if treatment:
+            if self.treatment_probability == 'group':
+                new_treatment_nodes = [i for i in range(idx-nodes_step, idx) if self.network.G.nodes[i]['color'] == 0]
+            elif self.treatment_probability == 1:
+                new_treatment_nodes = list(range(idx-nodes_step, idx))
+            elif self.treatment_probability > 0:
+                flips = np.random.random_sample(size=nodes_step) < self.treatment_probability
+                new_treatment_nodes = [i for i, f in zip(range(idx, idx+nodes_step), flips) if f]
             self.network.assign_treatment(new_treatment_nodes)
 
         if intervention:
@@ -692,7 +705,7 @@ class Experiment:
             step_treatment = True
             assert self.treatment_probability == 1
         else:
-            assert (self.treatment_probability > 0) != (self.treatment_size is not None)   # Check only one is true
+            assert self.treatment_probability == 'group' or ((self.treatment_probability > 0) != (self.treatment_size is not None))   # Check only one is true
             if self.treatment_time == 0:
                 step_treatment = self.assign_treatment()
 
@@ -706,6 +719,11 @@ class Experiment:
             self.compute_metrics(t, **kwargs)
     
     def assign_treatment(self):
+        # if we are assigning treatment to all nodes in group 0, then we need to assign treatment at every step
+        if self.treatment_probability == 'group':
+            treatment_nodes = list(self.dynamics.grp_lst[0].node_map.keys())
+            self.dynamics.network.assign_treatment(treatment_nodes)
+            return True
         # if we are assigning treatment probabilistically, then we need to assign treatment at every step
         if self.treatment_probability > 0:
             flips = np.random.random_sample(size=self.dynamics.network.nodes) < self.treatment_probability
@@ -839,7 +857,7 @@ class Experiment:
                     self.metrics[f"gini_coeff_{i}"].append(self.dynamics.network.gini_coeff(grp=grp))
                     
             # add treatment/control metrics
-            if self.is_ab_test:
+            if self.is_ab_test and time_step >= self.treatment_time + 1:
                 treatment_nodes = self.dynamics.network.get_treatment_nodes()
                 control_nodes = self.dynamics.network.get_control_nodes()
                 nodes_dict = {'treatment': treatment_nodes, 'control': control_nodes}
@@ -851,6 +869,12 @@ class Experiment:
                         self.metrics[f"avg_degree_{condition}_adjusted"].append(self.dynamics.network.avg_degree(grp=condition, ab_naive=False))
                         self.metrics[f"global_clustering_{condition}_adjusted"].append(self.dynamics.network.global_clustering(grp=condition, ab_naive=False))
                         self.metrics[f"gini_coeff_{condition}_adjusted"].append(self.dynamics.network.gini_coeff(grp=condition, ab_naive=False))
+                    if condition == 'treatment':
+                        self.metrics[f"global_clustering_{condition}_adjusted"].append(self.dynamics.network.global_clustering(grp=condition, ab_naive=False))
+                if self.treatment_probability == 'group':
+                    self.metrics['homophily_treatment'].append(self.dynamics.network.homophily('treatment'))
+                    self.metrics['homophily_treatment_adjusted'].append(self.dynamics.network.homophily('treatment', ab_naive=False))
+                    self.metrics['homophily_control'].append(self.dynamics.network.homophily('control'))
 
 
 """
@@ -911,6 +935,7 @@ class Conclusion:
         self.compute_num_acc = kwargs.get('comp_num_acc', True)
         self.compute_grp_metrics = kwargs.get('comp_grp_metrics', True)
         self.is_ab_test = kwargs.get('is_ab_test', False)
+        self.treatment_probability = kwargs.get('treatment_probability', 1)
         
         self.avg_metrics = defaultdict(list)
         self.avg_metrics['time'] = []
@@ -963,6 +988,12 @@ class Conclusion:
                     self.avg_metrics[f"avg_degree_{condition}_adjusted"] = []
                     self.avg_metrics[f"global_clustering_{condition}_adjusted"] = []
                     self.avg_metrics[f"gini_coeff_{condition}_adjusted"] = []
+                if condition == 'treatment':
+                    self.avg_metrics[f"global_clustering_{condition}_adjusted"] = []
+            if self.treatment_probability == 'group':
+                self.avg_metrics["homophily_treatment"] = []
+                self.avg_metrics["homophily_treatment_adjusted"] = []
+                self.avg_metrics["homophily_control"] = []
 
     def add_metrics(self, experiment: Experiment):
         exp_metrics = experiment.metrics
@@ -1014,6 +1045,12 @@ class Conclusion:
                     self.avg_metrics[f"avg_degree_{condition}_adjusted"].append(exp_metrics[f"avg_degree_{condition}_adjusted"])
                     self.avg_metrics[f"global_clustering_{condition}_adjusted"].append(exp_metrics[f"global_clustering_{condition}_adjusted"])
                     self.avg_metrics[f"gini_coeff_{condition}_adjusted"].append(exp_metrics[f"gini_coeff_{condition}_adjusted"])
+                if condition == 'treatment':
+                    self.avg_metrics[f"global_clustering_{condition}_adjusted"].append(exp_metrics[f"global_clustering_{condition}_adjusted"])
+            if self.treatment_probability == 'group':
+                self.avg_metrics["homophily_treatment"].append(exp_metrics["homophily_treatment"])
+                self.avg_metrics["homophily_treatment_adjusted"].append(exp_metrics["homophily_treatment_adjusted"])
+                self.avg_metrics["homophily_control"].append(exp_metrics["homophily_control"])
 
     
     def mean_confidence_interval(self, data, confidence=0.95):
@@ -1079,6 +1116,12 @@ class Conclusion:
                     self.add_stats(f"avg_degree_{condition}_adjusted")
                     self.add_stats(f"global_clustering_{condition}_adjusted")
                     self.add_stats(f"gini_coeff_{condition}_adjusted")
+                if condition == 'treatment':
+                    self.add_stats(f"global_clustering_{condition}_adjusted")
+            if self.treatment_probability == 'group':
+                self.add_stats("homophily_treatment")
+                self.add_stats("homophily_treatment_adjusted")
+                self.add_stats("homophily_control")
     
     def plot_avg_metrics(self):
         fig, axs = plt.subplots(4, 4, figsize=(25, 20))
@@ -1156,7 +1199,8 @@ To run an experiment, there are 3 steps:
     
     options for conducting AB test:
         is_ab_test=False, 
-        treatment_probability=1, treatment_size=None, treatment_time=intervention_time[0]
+        treatment_probability=1 ('group' when we assign group 0 as treatment group), 
+        treatment_size=None, treatment_time=intervention_time[0]
 '''
 if __name__ == "__main__":
     
@@ -1184,5 +1228,5 @@ if __name__ == "__main__":
                             node_removal=False,
                             edge_removal=False,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1,
-                            is_ab_test=True, treatment_probability=0.1)
+                            is_ab_test=True, treatment_probability='group')
     print(conclusion.avg_values)
