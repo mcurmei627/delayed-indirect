@@ -102,6 +102,7 @@ class Network:
         self.edge_matrix_3 = np.zeros((self.num_groups, self.num_groups))
         self.edge_matrix_phase = {'init': self.edge_matrix_0, 'ngp1': self.edge_matrix_1, 'ngp2_unmediated': self.edge_matrix_2_unmediated, 'ngp2_mediated': self.edge_matrix_2_mediated, 'rec': self.edge_matrix_3}
         self.edge_phase = {'init': 0, 'ngp1': 0, 'ngp2_unmediated': 0, 'ngp2_mediated': 0, 'rec': 0}
+        self.treatment_group = []
         self.initialize_node()
 
         self.init_how = kwargs.get('init_how', 'color')
@@ -111,7 +112,7 @@ class Network:
     def initialize_node(self):
         for grp in self.group_lst:
             for node_idx, node_obj in grp.node_map.items():
-                self.G.add_node(node_obj.idx, vector=node_obj.embed, color=node_obj.color, age=node_obj.age, time=node_obj.time, is_treatment=False)
+                self.G.add_node(node_obj.idx, vector=node_obj.embed, color=node_obj.color, age=node_obj.age, time=node_obj.time, is_treatment=False, num_rec=0)
 
     # initialize the edges in graph by constant connection probability (color) or embedding affinity (embedding)
     def initialize_edge(self, how):
@@ -164,7 +165,7 @@ class Network:
         if node.embed is None:
             grp = self.group_lst[node.color]
             node.embed = np.random.multivariate_normal(grp.mean, grp.variance)
-        self.G.add_node(node.idx, vector=node.embed, color=node.color, age=node.age, time=node.time, is_treatment=False)
+        self.G.add_node(node.idx, vector=node.embed, color=node.color, age=node.age, time=node.time, is_treatment=False, num_rec=0)
         
     def add_edge(self, n1: int, n2: int, phase: str):
         assert not self.G.has_edge(n1, n2)
@@ -179,6 +180,9 @@ class Network:
             self.edge_matrix[c2][c1] += 1
             self.edge_matrix_phase[phase][c1][c2] += 1
             self.edge_matrix_phase[phase][c2][c1] += 1
+        if phase == 'rec':
+            self.G.nodes[n1]['num_rec'] += 1
+            self.G.nodes[n2]['num_rec'] += 1
     
     def remove_edge(self, n1, n2):
         c1, c2 = self.G.nodes[n1]['color'], self.G.nodes[n2]['color']
@@ -193,6 +197,9 @@ class Network:
             self.edge_matrix[c2][c1] -= 1
             self.edge_matrix_phase[edge_phase][c1][c2] -= 1
             self.edge_matrix_phase[edge_phase][c2][c1] -= 1
+        if edge_phase == 'rec':
+            self.G.nodes[n1]['num_rec'] -= 1
+            self.G.nodes[n2]['num_rec'] -= 1
 
     def remove_node(self, idx):
         for n1, n2, data in list(self.G.edges(idx, data=True)):
@@ -213,18 +220,20 @@ class Network:
         return nx.descendants_at_distance(self.G, node, dist)        
     
     def get_treatment_nodes(self):
-        return [n for n in self.G.nodes if self.G.nodes[n]['is_treatment']]
+        return self.treatment_group
     
     def get_control_nodes(self):
-        return [n for n in self.G.nodes if not self.G.nodes[n]['is_treatment']]
+        return list(set(list(self.G.nodes)) - set(self.treatment_group))
     
     def assign_treatment(self, idx_list):
         for idx in idx_list:
             self.G.nodes[idx]['is_treatment'] = True
+            self.treatment_group.append(idx)
     
     def remove_treatment(self, idx_list):
         for idx in idx_list:
             self.G.nodes[idx]['is_treatment'] = False
+            self.treatment_group.remove(idx)
     
     @property
     def edges(self):
@@ -236,10 +245,25 @@ class Network:
     
     @property
     def num_treatment_nodes(self):
-        return len(self.get_treatment_nodes())
+        return len(self.treatment_group)
+    
+    @property
+    def num_control_nodes(self):
+        return len(self.get_control_nodes())
 
-    def global_clustering(self, grp=None, idx_list=None):
-        # handle idx_list for every metric
+    def global_clustering(self, grp=None, idx_list=None, ab_naive=True):
+        if grp == 'treatment' or grp == "control":
+            idx_list = self.get_treatment_nodes() if grp == 'treatment' else self.get_control_nodes()
+            if len(idx_list) == 0:
+                return 0
+            if ab_naive:
+                clustering_coeff = [nx.algorithms.cluster.clustering(self.G, n) for n in idx_list]
+                return sum(clustering_coeff) / len(idx_list)
+            else:
+                subgraph = self.G.subgraph(idx_list)
+                clustering_coeff = [nx.algorithms.cluster.clustering(subgraph, n) for n in idx_list]
+                return sum(clustering_coeff) / len(idx_list)
+
         if grp:
             color = grp.color
             clustering_coeff = [nx.algorithms.cluster.clustering(self.G, n) for n in self.G.nodes() if self.G.nodes[n]['color'] == color]
@@ -261,13 +285,22 @@ class Network:
             centralities = {k: (v - min_val) / (max_val - min_val) for k, v in centralities.items()}
         return centralities
 
-    def avg_degree(self, grp=None, idx_list=None):
+    def avg_degree(self, grp=None, idx_list=None, ab_naive=True):
         degree_list = list(self.G.degree())
-        if grp:
+        if grp == 'treatment':
+            degree_list = [(n,d) for n, d in degree_list if n in self.get_treatment_nodes()]
+        elif grp == 'control':
+            if ab_naive:
+                degree_list = [(n,d) for n, d in degree_list if n in self.get_control_nodes()]
+            else:
+                degree_list = [(n,d-self.G.nodes[n]['num_rec']) for n, d in degree_list if n in self.get_control_nodes()]
+        elif grp:
             color = grp.color
             degree_list = [(n,d) for n, d in degree_list if self.G.nodes[n]['color'] == color]
-        if idx_list:
+        elif idx_list:
             degree_list = [(n,d) for n, d in degree_list if n in idx_list]
+        if len(degree_list) == 0:
+            return 0
         return np.mean([i[1] for i in degree_list])
 
     def degree_var(self, grp=None, idx_list=None):
@@ -298,22 +331,40 @@ class Network:
         edge_matrix = self.edge_matrix_phase[phase]
         return edge_matrix[0][0] + edge_matrix[1][1], edge_matrix[0][1]
 
-    def gini_coeff(self, grp=None, idx_list=None):
+    def gini_coeff(self, grp=None, idx_list=None, ab_naive=True):
         degree_list = list(self.G.degree())
-        if grp:
+        if grp == 'treatment':
+            degree_list = [(n,d) for n, d in degree_list if n in self.get_treatment_nodes()]
+        elif grp == 'control':
+            if ab_naive:
+                degree_list = [(n,d) for n, d in degree_list if n in self.get_control_nodes()]
+            else:
+                degree_list = [(n,d-self.G.nodes[n]['num_rec']) for n, d in degree_list if n in self.get_control_nodes()]
+        elif grp:
             color = grp.color
             degree_list = [(n,d) for n, d in degree_list if self.G.nodes[n]['color'] == color]
-        if idx_list:
+        elif idx_list:
             degree_list = [(n,d) for n, d in degree_list if n in idx_list]
         degree_list = [d for _, d in degree_list]
         degree_list = np.sort(degree_list)
         n = len(degree_list)
+        if n == 0:
+            return 0
         gini = 2 * np.sum( np.arange(n) * degree_list) / (n * np.sum(degree_list)) - (n + 1) / n
         return gini
         
-    def homophily(self, grp: Group):
-        color = grp.color
-        return self.edge_matrix[color][color] / np.sum(self.edge_matrix, axis=0)[color] - grp.size / self.nodes
+    def homophily(self, grp, ab_naive=True):
+        # group 0 is treatment, group 1 is control
+        if grp == 'treatment':
+            if ab_naive:
+                return self.edge_matrix[0][0] / np.sum(self.edge_matrix, axis=0)[0] - self.num_treatment_nodes / self.nodes
+            else:
+                return (self.edge_matrix[0][0] - self.edge_matrix_3[0][0]) / (np.sum(self.edge_matrix, axis=0)[0] - np.sum(self.edge_matrix_3, axis=0)[0]) - self.num_treatment_nodes / self.nodes
+        elif grp == 'control':
+            return self.edge_matrix[1][1] / np.sum(self.edge_matrix, axis=0)[1] - self.num_control_nodes / self.nodes
+        else:
+            color = grp.color
+            return self.edge_matrix[color][color] / np.sum(self.edge_matrix, axis=0)[color] - grp.size / self.nodes
     
     def sigmoid(self, n):
         return 1/(1 + np.exp(-n * self.a + self.b))
@@ -379,13 +430,6 @@ class Dynamics:
         arrival_probs = self.network.init_sizes/np.sum(self.network.init_sizes)
         new_nodes_grp = np.random.choice(len(self.grp_lst), size=nodes_step, p=arrival_probs)
 
-        if treatment:
-            if self.treatment_probability == 1:
-                new_treatment_nodes = list(range(idx, idx+nodes_step))
-            else:
-                flips = np.random.random_sample(size=nodes_step) < self.treatment_probability
-                new_treatment_nodes = [i for i, f in zip(range(idx, idx+nodes_step), flips) if f]
-
         for i in range(nodes_step):
             grp = self.grp_lst[new_nodes_grp[i]]
             node = grp.add_node(idx)
@@ -393,6 +437,13 @@ class Dynamics:
             idx += 1
 
         if treatment:
+            if isinstance(self.treatment_probability, list):
+                new_treatment_nodes = [i for i in range(idx-nodes_step, idx) if self.network.G.nodes[i]['color'] in self.treatment_probability]
+            elif self.treatment_probability == 1:
+                new_treatment_nodes = list(range(idx-nodes_step, idx))
+            elif self.treatment_probability > 0:
+                flips = np.random.random_sample(size=nodes_step) < self.treatment_probability
+                new_treatment_nodes = [i for i, f in zip(range(idx-nodes_step, idx), flips) if f]
             self.network.assign_treatment(new_treatment_nodes)
 
         if intervention:
@@ -651,7 +702,7 @@ class Experiment:
             step_treatment = True
             assert self.treatment_probability == 1
         else:
-            assert (self.treatment_probability > 0) != (self.treatment_size is not None)   # Check only one is true
+            assert isinstance(self.treatment_probability, list) or ((self.treatment_probability > 0) != (self.treatment_size is not None))   # Check only one is true
             if self.treatment_time == 0:
                 step_treatment = self.assign_treatment()
 
@@ -665,6 +716,13 @@ class Experiment:
             self.compute_metrics(t, **kwargs)
     
     def assign_treatment(self):
+        # if we are assigning treatment to groups, then we need to assign treatment at every step
+        if isinstance(self.treatment_probability, list):
+            treatment_nodes = []
+            for i in self.treatment_probability:
+                treatment_nodes.extend(list(self.dynamics.grp_lst[i].node_map.keys()))
+            self.dynamics.network.assign_treatment(treatment_nodes)
+            return True
         # if we are assigning treatment probabilistically, then we need to assign treatment at every step
         if self.treatment_probability > 0:
             flips = np.random.random_sample(size=self.dynamics.network.nodes) < self.treatment_probability
@@ -803,10 +861,19 @@ class Experiment:
                 control_nodes = self.dynamics.network.get_control_nodes()
                 nodes_dict = {'treatment': treatment_nodes, 'control': control_nodes}
                 for condition in ['treatment', 'control']:
-                    self.metrics[f"avg_degree_{condition}"].append(self.dynamics.network.avg_degree(idx_list=nodes_dict[condition]))
-                    self.metrics[f"degree_variance_{condition}"].append(self.dynamics.network.degree_var(idx_list=nodes_dict[condition]))
-                    self.metrics[f"global_clustering_{condition}"].append(self.dynamics.network.global_clustering(idx_list=nodes_dict[condition]))
-                    self.metrics[f"gini_coeff_{condition}"].append(self.dynamics.network.gini_coeff(idx_list=nodes_dict[condition]))
+                    self.metrics[f"avg_degree_{condition}"].append(self.dynamics.network.avg_degree(grp=condition))
+                    self.metrics[f"global_clustering_{condition}"].append(self.dynamics.network.global_clustering(grp=condition))
+                    self.metrics[f"gini_coeff_{condition}"].append(self.dynamics.network.gini_coeff(grp=condition))
+                    if condition == 'control':
+                        self.metrics[f"avg_degree_{condition}_adjusted"].append(self.dynamics.network.avg_degree(grp=condition, ab_naive=False))
+                        self.metrics[f"global_clustering_{condition}_adjusted"].append(self.dynamics.network.global_clustering(grp=condition, ab_naive=False))
+                        self.metrics[f"gini_coeff_{condition}_adjusted"].append(self.dynamics.network.gini_coeff(grp=condition, ab_naive=False))
+                    if condition == 'treatment':
+                        self.metrics[f"global_clustering_{condition}_adjusted"].append(self.dynamics.network.global_clustering(grp=condition, ab_naive=False))
+                if isinstance(self.treatment_probability, list):
+                    self.metrics['homophily_treatment'].append(self.dynamics.network.homophily('treatment'))
+                    self.metrics['homophily_treatment_adjusted'].append(self.dynamics.network.homophily('treatment', ab_naive=False))
+                    self.metrics['homophily_control'].append(self.dynamics.network.homophily('control'))
 
 
 """
@@ -867,6 +934,7 @@ class Conclusion:
         self.compute_num_acc = kwargs.get('comp_num_acc', True)
         self.compute_grp_metrics = kwargs.get('comp_grp_metrics', True)
         self.is_ab_test = kwargs.get('is_ab_test', False)
+        self.treatment_probability = kwargs.get('treatment_probability', 1)
         
         self.avg_metrics = defaultdict(list)
         self.avg_metrics['time'] = []
@@ -913,9 +981,18 @@ class Conclusion:
         if self.is_ab_test:
             for condition in ['control', 'treatment']:
                 self.avg_metrics[f"avg_degree_{condition}"] = []
-                self.avg_metrics[f"degree_variance_{condition}"] = []
                 self.avg_metrics[f"global_clustering_{condition}"] = []
                 self.avg_metrics[f"gini_coeff_{condition}"] = []
+                if condition == 'control':
+                    self.avg_metrics[f"avg_degree_{condition}_adjusted"] = []
+                    self.avg_metrics[f"global_clustering_{condition}_adjusted"] = []
+                    self.avg_metrics[f"gini_coeff_{condition}_adjusted"] = []
+                if condition == 'treatment':
+                    self.avg_metrics[f"global_clustering_{condition}_adjusted"] = []
+            if isinstance(self.treatment_probability, list):
+                self.avg_metrics["homophily_treatment"] = []
+                self.avg_metrics["homophily_treatment_adjusted"] = []
+                self.avg_metrics["homophily_control"] = []
 
     def add_metrics(self, experiment: Experiment):
         exp_metrics = experiment.metrics
@@ -961,9 +1038,19 @@ class Conclusion:
         if self.is_ab_test:
             for condition in ['control', 'treatment']:
                 self.avg_metrics[f"avg_degree_{condition}"].append(exp_metrics[f"avg_degree_{condition}"])
-                self.avg_metrics[f"degree_variance_{condition}"].append(exp_metrics[f"degree_variance_{condition}"])
                 self.avg_metrics[f"global_clustering_{condition}"].append(exp_metrics[f"global_clustering_{condition}"])
                 self.avg_metrics[f"gini_coeff_{condition}"].append(exp_metrics[f"gini_coeff_{condition}"])
+                if condition == 'control':
+                    self.avg_metrics[f"avg_degree_{condition}_adjusted"].append(exp_metrics[f"avg_degree_{condition}_adjusted"])
+                    self.avg_metrics[f"global_clustering_{condition}_adjusted"].append(exp_metrics[f"global_clustering_{condition}_adjusted"])
+                    self.avg_metrics[f"gini_coeff_{condition}_adjusted"].append(exp_metrics[f"gini_coeff_{condition}_adjusted"])
+                if condition == 'treatment':
+                    self.avg_metrics[f"global_clustering_{condition}_adjusted"].append(exp_metrics[f"global_clustering_{condition}_adjusted"])
+            if isinstance(self.treatment_probability, list):
+                self.avg_metrics["homophily_treatment"].append(exp_metrics["homophily_treatment"])
+                self.avg_metrics["homophily_treatment_adjusted"].append(exp_metrics["homophily_treatment_adjusted"])
+                self.avg_metrics["homophily_control"].append(exp_metrics["homophily_control"])
+
     
     def mean_confidence_interval(self, data, confidence=0.95):
         a = 1.0 * np.array(data)
@@ -1022,9 +1109,18 @@ class Conclusion:
         if self.is_ab_test:
             for condition in ['control', 'treatment']:
                 self.add_stats(f"avg_degree_{condition}")
-                self.add_stats(f"degree_variance_{condition}")
                 self.add_stats(f"global_clustering_{condition}")
                 self.add_stats(f"gini_coeff_{condition}")
+                if condition == 'control':
+                    self.add_stats(f"avg_degree_{condition}_adjusted")
+                    self.add_stats(f"global_clustering_{condition}_adjusted")
+                    self.add_stats(f"gini_coeff_{condition}_adjusted")
+                if condition == 'treatment':
+                    self.add_stats(f"global_clustering_{condition}_adjusted")
+            if isinstance(self.treatment_probability, list):
+                self.add_stats("homophily_treatment")
+                self.add_stats("homophily_treatment_adjusted")
+                self.add_stats("homophily_control")
     
     def plot_avg_metrics(self):
         fig, axs = plt.subplots(4, 4, figsize=(25, 20))
@@ -1102,7 +1198,8 @@ To run an experiment, there are 3 steps:
     
     options for conducting AB test:
         is_ab_test=False, 
-        treatment_probability=1, treatment_size=None, treatment_time=intervention_time[0]
+        treatment_probability=1 (a list of group numbers when we assign groups as treatment group), 
+        treatment_size=None, treatment_time=intervention_time[0]
 '''
 if __name__ == "__main__":
     
@@ -1130,5 +1227,5 @@ if __name__ == "__main__":
                             node_removal=False,
                             edge_removal=False,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1,
-                            is_ab_test=True, treatment_probability=0.1)
+                            is_ab_test=True, treatment_probability=[0])
     print(conclusion.avg_values)
