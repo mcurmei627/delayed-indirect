@@ -205,6 +205,8 @@ class Network:
         for n1, n2, data in list(self.G.edges(idx, data=True)):
             self.remove_edge(n1, n2)
         self.G.remove_node(idx)
+        if idx in self.treatment_group:
+            self.treatment_group.remove(idx)
     
     def time_increment(self):
         for node in list(self.G.nodes):
@@ -718,9 +720,7 @@ class Experiment:
     def assign_treatment(self):
         # if we are assigning treatment to groups, then we need to assign treatment at every step
         if isinstance(self.treatment_probability, list):
-            treatment_nodes = []
-            for i in self.treatment_probability:
-                treatment_nodes.extend(list(self.dynamics.grp_lst[i].node_map.keys()))
+            treatment_nodes = [i for i in self.G.nodes if self.G.nodes[i]['color'] in self.treatment_probability]
             self.dynamics.network.assign_treatment(treatment_nodes)
             return True
         # if we are assigning treatment probabilistically, then we need to assign treatment at every step
