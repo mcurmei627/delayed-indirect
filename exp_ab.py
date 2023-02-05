@@ -17,8 +17,6 @@ b = 5
 acc_prob=0.5
 beta=10
 
-#  if treated_how == 'group', then treament prob will be either [0] or [1]
-
 def run(rec_how, acc_how, intervention_end=None, node_removal=False, edge_removal=False, treatment_probability=0.5):
     
     folder_name = 'experiments/exp_ab'
@@ -73,4 +71,4 @@ edge_removal = [True, False]
 treatment_probability = [0.1, 0.5, 0.9, [1]]
 
 settings = list(product(rec_how, acc_how, intervention_end, node_removal, edge_removal, treatment_probability))
-Parallel(n_jobs=1)(delayed(run)(*setting) for setting in tqdm(settings))
+Parallel(n_jobs=64)(delayed(run)(*setting) for setting in tqdm(settings))
