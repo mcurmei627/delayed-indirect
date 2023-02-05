@@ -355,7 +355,7 @@ class Network:
         gini = 2 * np.sum( np.arange(n) * degree_list) / (n * np.sum(degree_list)) - (n + 1) / n
         return gini
         
-    def homophily(self, grp, ab_naive=True):
+    def homophily(self, grp, ab_naive=True, is_treatment=False):
         i = grp.color
         within_group = self.edge_matrix[i][i]
         group_total = sum(self.edge_matrix[i])
@@ -363,7 +363,8 @@ class Network:
             return within_group / group_total - grp.size / self.num_nodes
         else:
             recomm_across_group = sum(self.edge_matrix_3[i]) - self.edge_matrix_3[i][i]
-            return within_group / (group_total - recomm_across_group) - grp.size / self.num_nodes
+            sgn = 1 if is_treatment else -1
+            return within_group / (group_total + sgn*recomm_across_group) - grp.size / self.num_nodes
     
     def sigmoid(self, n):
         return 1/(1 + np.exp(-n * self.a + self.b))
@@ -848,6 +849,7 @@ class Experiment:
                     if self.is_ab_test and isinstance(self.treatment_probability, list):
                         if i in self.treatment_probability:
                             self.metrics[f"homophily_{i}_treatment"].append(self.dynamics.network.homophily(grp))
+                            self.metrics[f"homophily_{i}_treatment_adjusted"].append(self.dynamics.network.homophily(grp, ab_naive=False, is_treatment=True))
                         else:
                             self.metrics[f"homophily_{i}_control"].append(self.dynamics.network.homophily(grp))
                             self.metrics[f"homophily_{i}_control_adjusted"].append(self.dynamics.network.homophily(grp, ab_naive=False))
@@ -968,6 +970,7 @@ class Conclusion:
                 if self.is_ab_test and isinstance(self.treatment_probability, list):
                     if i in self.treatment_probability:
                         self.avg_metrics[f"homophily_{i}_treatment"] = []
+                        self.avg_metrics[f"homophily_{i}_treatment_adjusted"] = []
                     else:
                         self.avg_metrics[f"homophily_{i}_control"] = []
                         self.avg_metrics[f"homophily_{i}_control_adjusted"] = []
@@ -1035,6 +1038,7 @@ class Conclusion:
                 if self.is_ab_test and isinstance(self.treatment_probability, list):
                     if i in self.treatment_probability:
                         self.avg_metrics[f"homophily_{i}_treatment"].append(exp_metrics[f"homophily_{i}_treatment"])
+                        self.avg_metrics[f"homophily_{i}_treatment_adjusted"].append(exp_metrics[f"homophily_{i}_treatment_adjusted"])
                     else:
                         self.avg_metrics[f"homophily_{i}_control"].append(exp_metrics[f"homophily_{i}_control"])
                         self.avg_metrics[f"homophily_{i}_control_adjusted"].append(exp_metrics[f"homophily_{i}_control_adjusted"])
@@ -1109,6 +1113,7 @@ class Conclusion:
                 if self.is_ab_test and isinstance(self.treatment_probability, list):
                     if i in self.treatment_probability:
                         self.add_stats(f"homophily_{i}_treatment")
+                        self.add_stats(f"homophily_{i}_treatment_adjusted")
                     else:
                         self.add_stats(f"homophily_{i}_control")
                         self.add_stats(f"homophily_{i}_control_adjusted")
