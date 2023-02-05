@@ -425,26 +425,26 @@ class Dynamics:
         self.node_removal = kwargs.get('node_removal', True)
         self.treatment_probability = kwargs.get('treatment_probability', 1)
 
-    def step(self, nodes_step, idx, intervention, treatment, **kwargs):
+    def step(self, nodes_step, idx, intervention, treatment, natural_growth, **kwargs):
         # assume new node comes in proportional to groups' initial sizes
         arrival_probs = self.network.init_sizes/np.sum(self.network.init_sizes)
         new_nodes_grp = np.random.choice(len(self.grp_lst), size=nodes_step, p=arrival_probs)
+        if natural_growth:
+            for i in range(nodes_step):
+                grp = self.grp_lst[new_nodes_grp[i]]
+                node = grp.add_node(idx)
+                self.step_natural_growth(node, self.ng_how, self.p2_mediated)
+                idx += 1
 
-        for i in range(nodes_step):
-            grp = self.grp_lst[new_nodes_grp[i]]
-            node = grp.add_node(idx)
-            self.step_natural_growth(node, self.ng_how, self.p2_mediated)
-            idx += 1
-
-        if treatment:
-            if isinstance(self.treatment_probability, list):
-                new_treatment_nodes = [i for i in range(idx-nodes_step, idx) if self.network.G.nodes[i]['color'] in self.treatment_probability]
-            elif self.treatment_probability == 1:
-                new_treatment_nodes = list(range(idx-nodes_step, idx))
-            elif self.treatment_probability > 0:
-                flips = np.random.random_sample(size=nodes_step) < self.treatment_probability
-                new_treatment_nodes = [i for i, f in zip(range(idx-nodes_step, idx), flips) if f]
-            self.network.assign_treatment(new_treatment_nodes)
+            if treatment:
+                if isinstance(self.treatment_probability, list):
+                    new_treatment_nodes = [i for i in range(idx-nodes_step, idx) if self.network.G.nodes[i]['color'] in self.treatment_probability]
+                elif self.treatment_probability == 1:
+                    new_treatment_nodes = list(range(idx-nodes_step, idx))
+                elif self.treatment_probability > 0:
+                    flips = np.random.random_sample(size=nodes_step) < self.treatment_probability
+                    new_treatment_nodes = [i for i, f in zip(range(idx-nodes_step, idx), flips) if f]
+                self.network.assign_treatment(new_treatment_nodes)
 
         if intervention:
             self.intervention(**kwargs)
@@ -676,6 +676,7 @@ class Experiment:
         self.node_step = kwargs.get('node_step', 20)
         self.total_step = kwargs.get('total_step', 200)
         self.is_ab_test = kwargs.get('is_ab_test', False)
+        self.is_static = kwargs.get('is_static', False)
         
         np.random.seed(self.seed)
         random.seed(self.seed)
@@ -712,7 +713,10 @@ class Experiment:
             if self.is_ab_test and t == self.treatment_time:
                 step_treatment = self.assign_treatment()
             step_intervention = True if t in self.intervention_time else False
-            self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, step_treatment, **kwargs)
+            step_natural_growth = True
+            if self.is_static:
+                step_natural_growth = True if (len(self.intervention_time) == 0 or t < self.intervention_time[0]) else False
+            self.latest_idx = self.dynamics.step(self.node_step, self.latest_idx, step_intervention, step_treatment, step_natural_growth, **kwargs)
             self.compute_metrics(t, **kwargs)
     
     def assign_treatment(self):
@@ -1211,9 +1215,12 @@ To run an experiment, there are 3 steps:
         plot=False
     
     options for conducting AB test:
-        is_ab_test=False, 
-        treatment_probability=1 (a list of group numbers when we assign groups as treatment group), 
+        is_ab_test=False
+        treatment_probability=1 (a list of group numbers when we assign groups as treatment group)
         treatment_size=None, treatment_time=intervention_time[0]
+
+    options for a static setting:
+        is_static=False
 '''
 if __name__ == "__main__":
     
@@ -1236,10 +1243,11 @@ if __name__ == "__main__":
                             beta=beta,
                             p2_prob=0.5,
                             ng_how='embedding', 
-                            intervention_time=list(range(50, 200)),
+                            intervention_time=list(range(50, 400)),
                             rec_how='random_fof',
                             node_removal=False,
-                            edge_removal=False,
+                            edge_removal=True,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1,
-                            is_ab_test=True, treatment_probability=[1])
+                            is_ab_test=True, treatment_probability=0.5,
+                            is_static=True)
     print(conclusion.avg_values)
