@@ -356,17 +356,14 @@ class Network:
         return gini
         
     def homophily(self, grp, ab_naive=True):
-        # group 0 is treatment, group 1 is control
-        if grp == 'treatment':
-            if ab_naive:
-                return self.edge_matrix[0][0] / np.sum(self.edge_matrix, axis=0)[0] - self.num_treatment_nodes / self.num_nodes
-            else:
-                return (self.edge_matrix[0][0] - self.edge_matrix_3[0][0]) / (np.sum(self.edge_matrix, axis=0)[0] - np.sum(self.edge_matrix_3, axis=0)[0]) - self.num_treatment_nodes / self.num_nodes
-        elif grp == 'control':
-            return self.edge_matrix[1][1] / np.sum(self.edge_matrix, axis=0)[1] - self.num_control_nodes / self.num_nodes
+        i = grp.color
+        within_group = self.edge_matrix[i][i]
+        group_total = sum(self.edge_matrix[i])
+        if ab_naive:
+            return within_group / group_total - grp.size / self.num_nodes
         else:
-            color = grp.color
-            return self.edge_matrix[color][color] / np.sum(self.edge_matrix, axis=0)[color] - grp.size / self.num_nodes
+            recomm_across_group = sum(self.edge_matrix_3[i]) - self.edge_matrix_3[i][i]
+            return within_group / (group_total - recomm_across_group) - grp.size / self.num_nodes
     
     def sigmoid(self, n):
         return 1/(1 + np.exp(-n * self.a + self.b))
@@ -848,7 +845,14 @@ class Experiment:
                 if compute_nodes:
                     self.metrics[f"nodes_{i}"].append(grp.size)
                 if compute_homophily:
-                    self.metrics[f"homophily_{i}"].append(self.dynamics.network.homophily(grp))
+                    if self.is_ab_test and isinstance(self.treatment_probability, list):
+                        if i in self.treatment_probability:
+                            self.metrics[f"homophily_{i}_treatment"].append(self.dynamics.network.homophily(grp))
+                        else:
+                            self.metrics[f"homophily_{i}_control"].append(self.dynamics.network.homophily(grp))
+                            self.metrics[f"homophily_{i}_control_adjusted"].append(self.dynamics.network.homophily(grp, ab_naive=False))
+                    else:
+                        self.metrics[f"homophily_{i}"].append(self.dynamics.network.homophily(grp))
                 if compute_grp_metrics:
                     self.metrics[f"avg_degree_{i}"].append(self.dynamics.network.avg_degree(grp=grp))
                     self.metrics[f"degree_variance_{i}"].append(self.dynamics.network.degree_var(grp=grp))
@@ -870,10 +874,6 @@ class Experiment:
                         self.metrics[f"gini_coeff_{condition}_adjusted"].append(self.dynamics.network.gini_coeff(grp=condition, ab_naive=False))
                     if condition == 'treatment':
                         self.metrics[f"global_clustering_{condition}_adjusted"].append(self.dynamics.network.global_clustering(grp=condition, ab_naive=False))
-                if isinstance(self.treatment_probability, list):
-                    self.metrics['homophily_treatment'].append(self.dynamics.network.homophily('treatment'))
-                    self.metrics['homophily_treatment_adjusted'].append(self.dynamics.network.homophily('treatment', ab_naive=False))
-                    self.metrics['homophily_control'].append(self.dynamics.network.homophily('control'))
 
 
 """
@@ -965,7 +965,14 @@ class Conclusion:
             self.avg_metrics['avg_nn'] = []
         if self.compute_homophily:
             for i in range(self.grp_num):
-                self.avg_metrics[f"homophily_{i}"] = []
+                if self.is_ab_test and isinstance(self.treatment_probability, list):
+                    if i in self.treatment_probability:
+                        self.avg_metrics[f"homophily_{i}_treatment"] = []
+                    else:
+                        self.avg_metrics[f"homophily_{i}_control"] = []
+                        self.avg_metrics[f"homophily_{i}_control_adjusted"] = []
+                else:
+                    self.avg_metrics[f"homophily_{i}"] = []
         if self.compute_gini:
             self.avg_metrics['gini_coeff'] = []
         if self.compute_num_rec:
@@ -989,10 +996,6 @@ class Conclusion:
                     self.avg_metrics[f"gini_coeff_{condition}_adjusted"] = []
                 if condition == 'treatment':
                     self.avg_metrics[f"global_clustering_{condition}_adjusted"] = []
-            if isinstance(self.treatment_probability, list):
-                self.avg_metrics["homophily_treatment"] = []
-                self.avg_metrics["homophily_treatment_adjusted"] = []
-                self.avg_metrics["homophily_control"] = []
 
     def add_metrics(self, experiment: Experiment):
         exp_metrics = experiment.metrics
@@ -1029,7 +1032,14 @@ class Conclusion:
             if self.compute_nodes:
                 self.avg_metrics[f"nodes_{i}"].append(exp_metrics[f"nodes_{i}"])
             if self.compute_homophily:
-                self.avg_metrics[f"homophily_{i}"].append(exp_metrics[f"homophily_{i}"])
+                if self.is_ab_test and isinstance(self.treatment_probability, list):
+                    if i in self.treatment_probability:
+                        self.avg_metrics[f"homophily_{i}_treatment"].append(exp_metrics[f"homophily_{i}_treatment"])
+                    else:
+                        self.avg_metrics[f"homophily_{i}_control"].append(exp_metrics[f"homophily_{i}_control"])
+                        self.avg_metrics[f"homophily_{i}_control_adjusted"].append(exp_metrics[f"homophily_{i}_control_adjusted"])
+                else:
+                    self.avg_metrics[f"homophily_{i}"].append(exp_metrics[f"homophily_{i}"])
             if self.compute_grp_metrics:
                 self.avg_metrics[f"avg_degree_{i}"].append(exp_metrics[f"avg_degree_{i}"])
                 self.avg_metrics[f"degree_variance_{i}"].append(exp_metrics[f"degree_variance_{i}"])
@@ -1046,10 +1056,6 @@ class Conclusion:
                     self.avg_metrics[f"gini_coeff_{condition}_adjusted"].append(exp_metrics[f"gini_coeff_{condition}_adjusted"])
                 if condition == 'treatment':
                     self.avg_metrics[f"global_clustering_{condition}_adjusted"].append(exp_metrics[f"global_clustering_{condition}_adjusted"])
-            if isinstance(self.treatment_probability, list):
-                self.avg_metrics["homophily_treatment"].append(exp_metrics["homophily_treatment"])
-                self.avg_metrics["homophily_treatment_adjusted"].append(exp_metrics["homophily_treatment_adjusted"])
-                self.avg_metrics["homophily_control"].append(exp_metrics["homophily_control"])
 
     
     def mean_confidence_interval(self, data, confidence=0.95):
@@ -1100,7 +1106,14 @@ class Conclusion:
             if self.compute_nodes:
                 self.add_stats(f"nodes_{i}")
             if self.compute_homophily:
-                self.add_stats(f"homophily_{i}")
+                if self.is_ab_test and isinstance(self.treatment_probability, list):
+                    if i in self.treatment_probability:
+                        self.add_stats(f"homophily_{i}_treatment")
+                    else:
+                        self.add_stats(f"homophily_{i}_control")
+                        self.add_stats(f"homophily_{i}_control_adjusted")
+                else:
+                    self.add_stats(f"homophily_{i}")
             if self.compute_grp_metrics:
                 self.add_stats(f"avg_degree_{i}")
                 self.add_stats(f"degree_variance_{i}")
@@ -1117,10 +1130,6 @@ class Conclusion:
                     self.add_stats(f"gini_coeff_{condition}_adjusted")
                 if condition == 'treatment':
                     self.add_stats(f"global_clustering_{condition}_adjusted")
-            if isinstance(self.treatment_probability, list):
-                self.add_stats("homophily_treatment")
-                self.add_stats("homophily_treatment_adjusted")
-                self.add_stats("homophily_control")
     
     def plot_avg_metrics(self):
         fig, axs = plt.subplots(4, 4, figsize=(25, 20))
@@ -1227,5 +1236,5 @@ if __name__ == "__main__":
                             node_removal=False,
                             edge_removal=False,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1,
-                            is_ab_test=True, treatment_probability=[0])
+                            is_ab_test=True, treatment_probability=[1])
     print(conclusion.avg_values)
