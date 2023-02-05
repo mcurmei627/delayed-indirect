@@ -238,11 +238,11 @@ class Network:
             self.treatment_group.remove(idx)
     
     @property
-    def edges(self):
+    def num_edges(self):
         return self.G.number_of_edges()
 
     @property
-    def nodes(self):
+    def num_nodes(self):
         return self.G.number_of_nodes()
     
     @property
@@ -276,7 +276,7 @@ class Network:
             return sum(clustering_coeff) / len(idx_list)
         
         clustering_coeff = [nx.algorithms.cluster.clustering(self.G, n) for n in self.G.nodes()]
-        return sum(clustering_coeff) / self.nodes
+        return sum(clustering_coeff) / self.num_nodes
     
     def betweenness_centrality(self, rescale=True):
         centralities = nx.betweenness_centrality(self.G, normalized=True)
@@ -316,7 +316,7 @@ class Network:
     
     @property
     def bi_frac(self):
-        return np.triu(self.edge_matrix, 1).sum() / self.edges
+        return np.triu(self.edge_matrix, 1).sum() / self.num_edges
     
     @property
     def avg_age(self):
@@ -359,14 +359,14 @@ class Network:
         # group 0 is treatment, group 1 is control
         if grp == 'treatment':
             if ab_naive:
-                return self.edge_matrix[0][0] / np.sum(self.edge_matrix, axis=0)[0] - self.num_treatment_nodes / self.nodes
+                return self.edge_matrix[0][0] / np.sum(self.edge_matrix, axis=0)[0] - self.num_treatment_nodes / self.num_nodes
             else:
-                return (self.edge_matrix[0][0] - self.edge_matrix_3[0][0]) / (np.sum(self.edge_matrix, axis=0)[0] - np.sum(self.edge_matrix_3, axis=0)[0]) - self.num_treatment_nodes / self.nodes
+                return (self.edge_matrix[0][0] - self.edge_matrix_3[0][0]) / (np.sum(self.edge_matrix, axis=0)[0] - np.sum(self.edge_matrix_3, axis=0)[0]) - self.num_treatment_nodes / self.num_nodes
         elif grp == 'control':
-            return self.edge_matrix[1][1] / np.sum(self.edge_matrix, axis=0)[1] - self.num_control_nodes / self.nodes
+            return self.edge_matrix[1][1] / np.sum(self.edge_matrix, axis=0)[1] - self.num_control_nodes / self.num_nodes
         else:
             color = grp.color
-            return self.edge_matrix[color][color] / np.sum(self.edge_matrix, axis=0)[color] - grp.size / self.nodes
+            return self.edge_matrix[color][color] / np.sum(self.edge_matrix, axis=0)[color] - grp.size / self.num_nodes
     
     def sigmoid(self, n):
         return 1/(1 + np.exp(-n * self.a + self.b))
@@ -533,7 +533,7 @@ class Dynamics:
             node_lst = node_lst[:self.rec_sample_size]
         elif self.rec_sample_fraction != None:
             random.shuffle(node_lst)
-            rec_sample_size = int(self.rec_sample_fraction * self.network.nodes)
+            rec_sample_size = int(self.rec_sample_fraction * self.network.num_nodes)
             node_lst = node_lst[:rec_sample_size]
         for idx in node_lst:
             candidate = self.recommend_edge(idx, self.rec_how, **kwargs)
@@ -621,7 +621,7 @@ class Dynamics:
         embedding_mat = np.array([self.network.G.nodes[i]['vector'] for i in eligible])
         similarity = embedding_mat @ idx_embedding
         softmax_probs = sp.special.softmax(similarity*beta)
-        threshold = 0.1 / self.network.nodes
+        threshold = 0.1 / self.network.num_nodes
         softmax_probs = softmax_probs*(softmax_probs > threshold)
         if np.sum(softmax_probs) == 0:
             return None
@@ -725,13 +725,13 @@ class Experiment:
             return True
         # if we are assigning treatment probabilistically, then we need to assign treatment at every step
         if self.treatment_probability > 0:
-            flips = np.random.random_sample(size=self.dynamics.network.nodes) < self.treatment_probability
-            treatment_nodes = [i for i, f in zip(range(self.dynamics.network.nodes), flips) if f]
+            flips = np.random.random_sample(size=self.dynamics.network.num_nodes) < self.treatment_probability
+            treatment_nodes = [i for i, f in zip(list(self.dynamics.network.G.nodes), flips) if f]
             self.dynamics.network.assign_treatment(treatment_nodes)
             return True
         # if we are assigning a fixed treatment size, then we only need to assign treatment at the beginning of the treatment
         if self.treatment_size is not None:
-            treatment_nodes = np.random.choice(range(self.dynamics.network.nodes), size=self.treatment_size, replace=False)
+            treatment_nodes = np.random.choice(list(self.dynamics.network.G.nodes), size=self.treatment_size, replace=False)
             self.dynamics.network.assign_treatment(treatment_nodes)
             return False
         
@@ -813,9 +813,9 @@ class Experiment:
             self.metrics['time'].append(self.dynamics.network.time_step)
             self.metrics['added_nodes'].append(self.latest_idx)
             if compute_nodes:
-                self.metrics['nodes'].append(self.dynamics.network.nodes)
+                self.metrics['nodes'].append(self.dynamics.network.num_nodes)
             if compute_edges:
-                self.metrics['edges'].append(self.dynamics.network.edges) 
+                self.metrics['edges'].append(self.dynamics.network.num_edges)
                 phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
                 phase_key = ['init', 'ngp1', 'ngp2_unmediated', 'ngp2_mediated', 'rec']
                 for i, (p, k) in enumerate(zip(phases, phase_key)):
