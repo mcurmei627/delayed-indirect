@@ -737,27 +737,12 @@ class Experiment:
     def compute_metrics(self, time_step, **kwargs):
         freq = kwargs.get('freq', 1)
 
-        compute_nodes = kwargs.get('comp_nodes', True)
-        compute_edges = kwargs.get('comp_edges', True)
-        compute_degree = kwargs.get('comp_degree', True)
-        compute_degree_var = kwargs.get('comp_degvar', True)
-        compute_bi_frac = kwargs.get('comp_bifrac', True)
-        compute_cluster = kwargs.get('comp_cluster', True)
-        compute_age = kwargs.get('comp_age', True)
-        compute_nn = kwargs.get('comp_nn', True)
-        compute_homophily = kwargs.get('comp_homop', True)
-        compute_gini = kwargs.get('comp_gini', True)
-        compute_num_rec = kwargs.get('comp_num_rec', True)
-        compute_num_acc = kwargs.get('comp_num_acc', True)
-        compute_grp_metrics = kwargs.get('comp_grp_metrics', True)
-        
         metric_names = ['time', 'added_nodes', 'nodes', 'edges', 'avg_degree', 'degree_variance', 'bi_frac', 'global_clustering', 'avg_age', 'avg_nn', 'homophily', 'gini', 'num_rec', 'num_acc']
         phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
         group_metrics = ['nodes', 'homophily', 'avg_degree', 'degree_variance', 'global_clustering', 'gini_coeff']
         rec_metrics = ['rec_how', 'rec_sample_size', 'rec_distance', 'acc_how', 'acc_prob', 'edge_removal']
         
         if time_step == 0:
-            
             self.metrics = defaultdict(list)
             for metric in metric_names:
                 self.metrics[metric] = []
@@ -810,62 +795,47 @@ class Experiment:
         if time_step % freq == 0:
             self.metrics['time'].append(self.dynamics.network.time_step)
             self.metrics['added_nodes'].append(self.latest_idx)
-            if compute_nodes:
-                self.metrics['nodes'].append(self.dynamics.network.num_nodes)
-            if compute_edges:
-                self.metrics['edges'].append(self.dynamics.network.num_edges)
-                phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
-                phase_key = ['init', 'ngp1', 'ngp2_unmediated', 'ngp2_mediated', 'rec']
-                for i, (p, k) in enumerate(zip(phases, phase_key)):
-                    self.metrics[p].append(self.dynamics.network.edge_phase[k])
-                    mono, bi = self.dynamics.network.mono_bi_edge_phase(k)
-                    self.metrics[f"{p}_mono"].append(mono)
-                    self.metrics[f"{p}_bi"].append(bi)
-            if compute_degree:
-                self.metrics['avg_degree'].append(self.dynamics.network.avg_degree())
-            if compute_degree_var:
-                self.metrics['degree_variance'].append(self.dynamics.network.degree_var())
-            if compute_bi_frac:
-                self.metrics['bi_frac'].append(self.dynamics.network.bi_frac)
-            if compute_cluster:
-                self.metrics['global_clustering'].append(self.dynamics.network.global_clustering())
-            if compute_age:
-                self.metrics['avg_age'].append(self.dynamics.network.avg_age)
-            if compute_nn:
-                self.metrics['avg_nn'].append(self.dynamics.network.avg_nodes_dist2)
-            if compute_gini:
-                self.metrics['gini_coeff'].append(self.dynamics.network.gini_coeff())
-            if compute_num_rec:
-                self.metrics['num_rec'].append(self.dynamics.num_rec)
-            if compute_num_acc:
-                self.metrics['num_acc'].append(self.dynamics.num_acc)
+            self.metrics['nodes'].append(self.dynamics.network.num_nodes)
+            self.metrics['edges'].append(self.dynamics.network.num_edges)
+            phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
+            phase_key = ['init', 'ngp1', 'ngp2_unmediated', 'ngp2_mediated', 'rec']
+            for i, (p, k) in enumerate(zip(phases, phase_key)):
+                self.metrics[p].append(self.dynamics.network.edge_phase[k])
+                mono, bi = self.dynamics.network.mono_bi_edge_phase(k)
+                self.metrics[f"{p}_mono"].append(mono)
+                self.metrics[f"{p}_bi"].append(bi)
+            self.metrics['avg_degree'].append(self.dynamics.network.avg_degree())
+            self.metrics['degree_variance'].append(self.dynamics.network.degree_var())
+            self.metrics['bi_frac'].append(self.dynamics.network.bi_frac)
+            self.metrics['global_clustering'].append(self.dynamics.network.global_clustering())
+            self.metrics['avg_age'].append(self.dynamics.network.avg_age)
+            self.metrics['avg_nn'].append(self.dynamics.network.avg_nodes_dist2)
+            self.metrics['gini_coeff'].append(self.dynamics.network.gini_coeff())
+            self.metrics['num_rec'].append(self.dynamics.num_rec)
+            self.metrics['num_acc'].append(self.dynamics.num_acc)
 
             # add group metrics
             for i in range(len(self.dynamics.grp_lst)):
                 grp = self.dynamics.grp_lst[i]
-                if compute_nodes:
-                    self.metrics[f"nodes_{i}"].append(grp.size)
-                if compute_homophily:
-                    if self.is_ab_test and isinstance(self.treatment_probability, list):
-                        if i in self.treatment_probability:
-                            self.metrics[f"homophily_{i}_treatment"].append(self.dynamics.network.homophily(grp))
-                            self.metrics[f"homophily_{i}_treatment_adjusted"].append(self.dynamics.network.homophily(grp, ab_naive=False, is_treatment=True))
-                        else:
-                            self.metrics[f"homophily_{i}_control"].append(self.dynamics.network.homophily(grp))
-                            self.metrics[f"homophily_{i}_control_adjusted"].append(self.dynamics.network.homophily(grp, ab_naive=False))
+                self.metrics[f"nodes_{i}"].append(grp.size)
+                if self.is_ab_test and isinstance(self.treatment_probability, list):
+                    if i in self.treatment_probability:
+                        self.metrics[f"homophily_{i}_treatment"].append(self.dynamics.network.homophily(grp))
+                        self.metrics[f"homophily_{i}_treatment_adjusted"].append(self.dynamics.network.homophily(grp, ab_naive=False, is_treatment=True))
                     else:
-                        self.metrics[f"homophily_{i}"].append(self.dynamics.network.homophily(grp))
-                if compute_grp_metrics:
-                    self.metrics[f"avg_degree_{i}"].append(self.dynamics.network.avg_degree(grp=grp))
-                    self.metrics[f"degree_variance_{i}"].append(self.dynamics.network.degree_var(grp=grp))
-                    self.metrics[f"global_clustering_{i}"].append(self.dynamics.network.global_clustering(grp=grp))
-                    self.metrics[f"gini_coeff_{i}"].append(self.dynamics.network.gini_coeff(grp=grp))
+                        self.metrics[f"homophily_{i}_control"].append(self.dynamics.network.homophily(grp))
+                        self.metrics[f"homophily_{i}_control_adjusted"].append(self.dynamics.network.homophily(grp, ab_naive=False))
+                else:
+                    self.metrics[f"homophily_{i}"].append(self.dynamics.network.homophily(grp))
+                self.metrics[f"avg_degree_{i}"].append(self.dynamics.network.avg_degree(grp=grp))
+                self.metrics[f"degree_variance_{i}"].append(self.dynamics.network.degree_var(grp=grp))
+                self.metrics[f"global_clustering_{i}"].append(self.dynamics.network.global_clustering(grp=grp))
+                self.metrics[f"gini_coeff_{i}"].append(self.dynamics.network.gini_coeff(grp=grp))
                     
             # add treatment/control metrics
             if self.is_ab_test:
                 treatment_nodes = self.dynamics.network.get_treatment_nodes()
                 control_nodes = self.dynamics.network.get_control_nodes()
-                nodes_dict = {'treatment': treatment_nodes, 'control': control_nodes}
                 for condition in ['treatment', 'control']:
                     self.metrics[f"avg_degree_{condition}"].append(self.dynamics.network.avg_degree(grp=condition))
                     self.metrics[f"global_clustering_{condition}"].append(self.dynamics.network.global_clustering(grp=condition))
@@ -922,145 +892,57 @@ class Conclusion:
             self.plot_avg_metrics()
     
     def initialize_metrics(self, **kwargs):
-        self.compute_nodes = kwargs.get('comp_nodes', True)
-        self.compute_edges = kwargs.get('comp_edges', True)
-        self.compute_degree = kwargs.get('comp_degree', True)
-        self.compute_degree_var = kwargs.get('comp_degvar', True)
-        self.compute_bi_frac = kwargs.get('comp_bifrac', True)
-        self.compute_cluster = kwargs.get('comp_cluster', True)
-        self.compute_age = kwargs.get('comp_age', True)
-        self.compute_nn = kwargs.get('comp_nn', True)
-        self.compute_homophily = kwargs.get('comp_homop', True)
-        self.compute_gini = kwargs.get('comp_gini', True)
-        self.compute_num_rec = kwargs.get('comp_num_rec', True)
-        self.compute_num_acc = kwargs.get('comp_num_acc', True)
-        self.compute_grp_metrics = kwargs.get('comp_grp_metrics', True)
         self.is_ab_test = kwargs.get('is_ab_test', False)
         self.treatment_probability = kwargs.get('treatment_probability', 1)
+
+        self.metrics = ['time', 'added_nodes', 'nodes', 'edges', 'avg_degree', 'degree_variance', 'bi_frac', 'global_clustering', 'avg_age', 'avg_nn', 'homophily', 'gini', 'num_rec', 'num_acc']
+        self.phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
+        self.group_metrics = ['nodes', 'homophily', 'avg_degree', 'degree_variance', 'global_clustering', 'gini_coeff']
         
         self.avg_metrics = defaultdict(list)
-        self.avg_metrics['time'] = []
-        self.avg_metrics['added_nodes'] = []
 
-        if self.compute_nodes:
-            self.avg_metrics['nodes'] = []
-            for i in range(self.grp_num):
-                self.avg_metrics[f"nodes_{i}"] = []
-        if self.compute_edges:
-            self.avg_metrics['edges'] = []
-            phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
-            for p in phases:
+        for metric in self.metrics:
+            self.avg_metrics[metric] = []
+        for p in self.phases:
                 self.avg_metrics[p] = []
                 self.avg_metrics[f"{p}_mono"] = []
                 self.avg_metrics[f"{p}_bi"] = []
-        if self.compute_degree:
-            self.avg_metrics['avg_degree'] = []
-        if self.compute_degree_var:
-            self.avg_metrics['degree_variance'] = []
-        if self.compute_bi_frac:
-            self.avg_metrics['bi_frac'] = []
-        if self.compute_cluster:
-            self.avg_metrics['global_clustering'] = []
-        if self.compute_age:
-            self.avg_metrics['avg_age'] = []
-        if self.compute_nn:
-            self.avg_metrics['avg_nn'] = []
-        if self.compute_homophily:
-            for i in range(self.grp_num):
-                if self.is_ab_test and isinstance(self.treatment_probability, list):
-                    if i in self.treatment_probability:
-                        self.avg_metrics[f"homophily_{i}_treatment"] = []
-                        self.avg_metrics[f"homophily_{i}_treatment_adjusted"] = []
-                    else:
-                        self.avg_metrics[f"homophily_{i}_control"] = []
-                        self.avg_metrics[f"homophily_{i}_control_adjusted"] = []
+                self.metrics.extend([p, f"{p}_mono", f"{p}_bi"])
+        for i in range(self.grp_num):
+            for metric in self.group_metrics:
+                if metric == 'homophily':
+                    if self.is_ab_test and isinstance(self.treatment_probability, list):
+                        if i in self.treatment_probability:
+                            self.avg_metrics[f"homophily_{i}_treatment"] = []
+                            self.avg_metrics[f"homophily_{i}_treatment_adjusted"] = []
+                            self.metrics.extend([f"homophily_{i}_treatment", f"homophily_{i}_treatment_adjusted"])
+                        else:
+                            self.avg_metrics[f"homophily_{i}_control"] = []
+                            self.avg_metrics[f"homophily_{i}_control_adjusted"] = []
+                            self.metrics.extend([f"homophily_{i}_control", f"homophily_{i}_control_adjusted"])
                 else:
-                    self.avg_metrics[f"homophily_{i}"] = []
-        if self.compute_gini:
-            self.avg_metrics['gini_coeff'] = []
-        if self.compute_num_rec:
-            self.avg_metrics['num_rec'] = []
-        if self.compute_num_acc:
-            self.avg_metrics['num_acc'] = []
-        if self.compute_grp_metrics:
-            for i in range(self.grp_num):
-                self.avg_metrics[f"avg_degree_{i}"] = []
-                self.avg_metrics[f"degree_variance_{i}"] = []
-                self.avg_metrics[f"global_clustering_{i}"] = []
-                self.avg_metrics[f"gini_coeff_{i}"] = []
+                    self.metrics[f"{metric}_{i}"] = []
+                    self.metrics.append(f"{metric}_{i}")
+
         if self.is_ab_test:
             for condition in ['control', 'treatment']:
                 self.avg_metrics[f"avg_degree_{condition}"] = []
                 self.avg_metrics[f"global_clustering_{condition}"] = []
                 self.avg_metrics[f"gini_coeff_{condition}"] = []
+                self.metrics.extend([f"avg_degree_{condition}", f"global_clustering_{condition}", f"gini_coeff_{condition}"])
                 if condition == 'control':
                     self.avg_metrics[f"avg_degree_{condition}_adjusted"] = []
                     self.avg_metrics[f"global_clustering_{condition}_adjusted"] = []
                     self.avg_metrics[f"gini_coeff_{condition}_adjusted"] = []
+                    self.metrics.extend([f"avg_degree_{condition}_adjusted", f"global_clustering_{condition}_adjusted", f"gini_coeff_{condition}_adjusted"])
                 if condition == 'treatment':
                     self.avg_metrics[f"global_clustering_{condition}_adjusted"] = []
+                    self.metrics.append(f"global_clustering_{condition}_adjusted")
 
     def add_metrics(self, experiment: Experiment):
         exp_metrics = experiment.metrics
-        self.avg_metrics['time'].append(exp_metrics['time'])
-        self.avg_metrics['added_nodes'].append(exp_metrics['added_nodes'])
-        if self.compute_nodes:
-            self.avg_metrics['nodes'].append(exp_metrics['nodes'])
-        if self.compute_edges:
-            self.avg_metrics['edges'].append(exp_metrics['edges'])
-            phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
-            for p in phases:
-                self.avg_metrics[p].append(exp_metrics[p])
-                self.avg_metrics[f"{p}_mono"].append(exp_metrics[f"{p}_mono"])
-                self.avg_metrics[f"{p}_bi"].append(exp_metrics[f"{p}_bi"])
-        if self.compute_degree:
-            self.avg_metrics['avg_degree'].append(exp_metrics['avg_degree'])
-        if self.compute_degree_var:
-            self.avg_metrics['degree_variance'].append(exp_metrics['degree_variance'])
-        if self.compute_bi_frac:
-            self.avg_metrics['bi_frac'].append(exp_metrics['bi_frac'])
-        if self.compute_cluster:
-            self.avg_metrics['global_clustering'].append(exp_metrics['global_clustering'])
-        if self.compute_age:
-            self.avg_metrics['avg_age'].append(exp_metrics['avg_age'])
-        if self.compute_nn:
-            self.avg_metrics['avg_nn'].append(exp_metrics['avg_nn'])
-        if self.compute_gini:
-            self.avg_metrics['gini_coeff'].append(exp_metrics['gini_coeff'])
-        if self.compute_num_rec:
-            self.avg_metrics['num_rec'].append(exp_metrics['num_rec'])
-        if self.compute_num_acc:
-            self.avg_metrics['num_acc'].append(exp_metrics['num_acc'])
-        for i in range(self.grp_num):
-            if self.compute_nodes:
-                self.avg_metrics[f"nodes_{i}"].append(exp_metrics[f"nodes_{i}"])
-            if self.compute_homophily:
-                if self.is_ab_test and isinstance(self.treatment_probability, list):
-                    if i in self.treatment_probability:
-                        self.avg_metrics[f"homophily_{i}_treatment"].append(exp_metrics[f"homophily_{i}_treatment"])
-                        self.avg_metrics[f"homophily_{i}_treatment_adjusted"].append(exp_metrics[f"homophily_{i}_treatment_adjusted"])
-                    else:
-                        self.avg_metrics[f"homophily_{i}_control"].append(exp_metrics[f"homophily_{i}_control"])
-                        self.avg_metrics[f"homophily_{i}_control_adjusted"].append(exp_metrics[f"homophily_{i}_control_adjusted"])
-                else:
-                    self.avg_metrics[f"homophily_{i}"].append(exp_metrics[f"homophily_{i}"])
-            if self.compute_grp_metrics:
-                self.avg_metrics[f"avg_degree_{i}"].append(exp_metrics[f"avg_degree_{i}"])
-                self.avg_metrics[f"degree_variance_{i}"].append(exp_metrics[f"degree_variance_{i}"])
-                self.avg_metrics[f"global_clustering_{i}"].append(exp_metrics[f"global_clustering_{i}"])
-                self.avg_metrics[f"gini_coeff_{i}"].append(exp_metrics[f"gini_coeff_{i}"])
-        if self.is_ab_test:
-            for condition in ['control', 'treatment']:
-                self.avg_metrics[f"avg_degree_{condition}"].append(exp_metrics[f"avg_degree_{condition}"])
-                self.avg_metrics[f"global_clustering_{condition}"].append(exp_metrics[f"global_clustering_{condition}"])
-                self.avg_metrics[f"gini_coeff_{condition}"].append(exp_metrics[f"gini_coeff_{condition}"])
-                if condition == 'control':
-                    self.avg_metrics[f"avg_degree_{condition}_adjusted"].append(exp_metrics[f"avg_degree_{condition}_adjusted"])
-                    self.avg_metrics[f"global_clustering_{condition}_adjusted"].append(exp_metrics[f"global_clustering_{condition}_adjusted"])
-                    self.avg_metrics[f"gini_coeff_{condition}_adjusted"].append(exp_metrics[f"gini_coeff_{condition}_adjusted"])
-                if condition == 'treatment':
-                    self.avg_metrics[f"global_clustering_{condition}_adjusted"].append(exp_metrics[f"global_clustering_{condition}_adjusted"])
-
+        for metric in self.metrics:
+            self.avg_metrics[metric].append(exp_metrics[metric])
     
     def mean_confidence_interval(self, data, confidence=0.95):
         a = 1.0 * np.array(data)
@@ -1077,64 +959,8 @@ class Conclusion:
 
     def take_average(self):
         self.metric_names, self.avg_values, self.ci_values = [], {}, {}
-        self.add_stats('time')
-        self.add_stats('added_nodes')
-        if self.compute_nodes:
-            self.add_stats('nodes')
-        if self.compute_edges:
-            self.add_stats('edges')
-            phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
-            for p in phases:
-                self.add_stats(p)
-                self.add_stats(f"{p}_mono")
-                self.add_stats(f"{p}_bi")
-        if self.compute_degree:
-            self.add_stats('avg_degree')
-        if self.compute_degree_var:
-            self.add_stats('degree_variance')
-        if self.compute_bi_frac:
-            self.add_stats('bi_frac')
-        if self.compute_cluster:
-            self.add_stats('global_clustering')
-        if self.compute_age:
-            self.add_stats('avg_age')
-        if self.compute_nn:
-            self.add_stats('avg_nn')
-        if self.compute_gini:
-            self.add_stats('gini_coeff')
-        if self.compute_num_rec:
-            self.add_stats('num_rec')
-        if self.compute_num_acc:
-            self.add_stats('num_acc')
-        for i in range(self.grp_num):
-            if self.compute_nodes:
-                self.add_stats(f"nodes_{i}")
-            if self.compute_homophily:
-                if self.is_ab_test and isinstance(self.treatment_probability, list):
-                    if i in self.treatment_probability:
-                        self.add_stats(f"homophily_{i}_treatment")
-                        self.add_stats(f"homophily_{i}_treatment_adjusted")
-                    else:
-                        self.add_stats(f"homophily_{i}_control")
-                        self.add_stats(f"homophily_{i}_control_adjusted")
-                else:
-                    self.add_stats(f"homophily_{i}")
-            if self.compute_grp_metrics:
-                self.add_stats(f"avg_degree_{i}")
-                self.add_stats(f"degree_variance_{i}")
-                self.add_stats(f"global_clustering_{i}")
-                self.add_stats(f"gini_coeff_{i}")
-        if self.is_ab_test:
-            for condition in ['control', 'treatment']:
-                self.add_stats(f"avg_degree_{condition}")
-                self.add_stats(f"global_clustering_{condition}")
-                self.add_stats(f"gini_coeff_{condition}")
-                if condition == 'control':
-                    self.add_stats(f"avg_degree_{condition}_adjusted")
-                    self.add_stats(f"global_clustering_{condition}_adjusted")
-                    self.add_stats(f"gini_coeff_{condition}_adjusted")
-                if condition == 'treatment':
-                    self.add_stats(f"global_clustering_{condition}_adjusted")
+        for metric in self.metrics:
+            self.add_stats(metric)
     
     def plot_avg_metrics(self):
         fig, axs = plt.subplots(4, 4, figsize=(25, 20))
