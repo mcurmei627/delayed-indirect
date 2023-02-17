@@ -15,7 +15,7 @@ sigma2 = 0.05
 a = 2
 b = 5
 acc_prob=0.5
-beta=10
+beta=4
 
 def run(rec_how, acc_how, intervention_end=None, node_removal=False, edge_removal=False):
     if intervention_end == None:
@@ -43,17 +43,17 @@ def run(rec_how, acc_how, intervention_end=None, node_removal=False, edge_remova
                             edge_removal=edge_removal,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1)
     conclusion.experiments = None
-    folder_name = 'experiments/exp_delayed_effects'
+    folder_name = f'experiments/exp_delayed_effects_beta{beta}'
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
     fname = f'{folder_name}/{rec_how}_{acc_how}_{intervention_end}_{node_removal}_{edge_removal}.pkl'
     with open(fname, 'wb') as f:
         pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
         
-rec_how  = ['embedding', 'random_fof']
+rec_how  = ['adamic_adar']
 acc_how = ['constant', 'embedding']
-intervention_end = list(range(50, 401, 25))
-node_removal = [True, False]
+intervention_end = list(range(50, 401, 50))
+node_removal = [True,False]
 edge_removal = [True, False]
 
 settings = list(product(rec_how, acc_how, intervention_end, node_removal, edge_removal))
