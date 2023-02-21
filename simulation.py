@@ -1048,8 +1048,8 @@ if __name__ == "__main__":
     # An example of running the experiments
     mu1 = np.array([0,1])
     mu2 = np.array([1,0])
-    N1 = 20
-    N2 = 20
+    N1 = 50
+    N2 = 50
     sigma1 = 0.05
     sigma2 = 0.05
     a = 2
@@ -1060,11 +1060,11 @@ if __name__ == "__main__":
     grp_info = [{'mean': mu1, 'variance': sigma1*np.identity(2), 'size': N1},
                 {'mean': mu2, 'variance': sigma2*np.identity(2), 'size': N2}]
     conclusion.run_experiments(grp_info, plot=False, init_how='embedding', Ns=N1+N2, Nf=10, 
-                            node_step=5, total_step=200, acc_how='constant',acc_prob=0.5, a=a, b=b,
+                            node_step=5, total_step=400, acc_how='constant',acc_prob=0.5, a=a, b=b,
                             beta=beta,
                             p2_prob=0.5,
                             ng_how='embedding', 
-                            intervention_time=list(range(50, 100)),
+                            intervention_time=list(range(50, 200)),
                             rec_how='random_fof',
                             node_removal=False,
                             edge_removal=False,
