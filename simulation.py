@@ -737,7 +737,7 @@ class Experiment:
     def compute_metrics(self, time_step, **kwargs):
         freq = kwargs.get('freq', 1)
 
-        metric_names = ['time', 'added_nodes', 'nodes', 'edges', 'avg_degree', 'degree_variance', 'bi_frac', 'global_clustering', 'avg_age', 'avg_nn', 'homophily', 'gini', 'num_rec', 'num_acc']
+        metric_names = ['time', 'added_nodes', 'nodes', 'edges', 'avg_degree', 'degree_variance', 'bi_frac', 'global_clustering', 'avg_age', 'avg_nn', 'gini_coeff', 'num_rec', 'num_acc']
         phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
         group_metrics = ['nodes', 'homophily', 'avg_degree', 'degree_variance', 'global_clustering', 'gini_coeff']
         rec_metrics = ['rec_how', 'rec_sample_size', 'rec_distance', 'acc_how', 'acc_prob', 'edge_removal']
@@ -895,19 +895,19 @@ class Conclusion:
         self.is_ab_test = kwargs.get('is_ab_test', False)
         self.treatment_probability = kwargs.get('treatment_probability', 1)
 
-        self.metrics = ['time', 'added_nodes', 'nodes', 'edges', 'avg_degree', 'degree_variance', 'bi_frac', 'global_clustering', 'avg_age', 'avg_nn', 'homophily', 'gini', 'num_rec', 'num_acc']
+        self.metric_names = ['time', 'added_nodes', 'nodes', 'edges', 'avg_degree', 'degree_variance', 'bi_frac', 'global_clustering', 'avg_age', 'avg_nn', 'gini_coeff', 'num_rec', 'num_acc']
         self.phases = ['phase0', 'phase1', 'phase2_unmediated', 'phase2_mediated', 'phase3']
         self.group_metrics = ['nodes', 'homophily', 'avg_degree', 'degree_variance', 'global_clustering', 'gini_coeff']
         
         self.avg_metrics = defaultdict(list)
 
-        for metric in self.metrics:
+        for metric in self.metric_names:
             self.avg_metrics[metric] = []
         for p in self.phases:
                 self.avg_metrics[p] = []
                 self.avg_metrics[f"{p}_mono"] = []
                 self.avg_metrics[f"{p}_bi"] = []
-                self.metrics.extend([p, f"{p}_mono", f"{p}_bi"])
+                self.metric_names.extend([p, f"{p}_mono", f"{p}_bi"])
         for i in range(self.grp_num):
             for metric in self.group_metrics:
                 if metric == 'homophily':
@@ -915,33 +915,36 @@ class Conclusion:
                         if i in self.treatment_probability:
                             self.avg_metrics[f"homophily_{i}_treatment"] = []
                             self.avg_metrics[f"homophily_{i}_treatment_adjusted"] = []
-                            self.metrics.extend([f"homophily_{i}_treatment", f"homophily_{i}_treatment_adjusted"])
+                            self.metric_names.extend([f"homophily_{i}_treatment", f"homophily_{i}_treatment_adjusted"])
                         else:
                             self.avg_metrics[f"homophily_{i}_control"] = []
                             self.avg_metrics[f"homophily_{i}_control_adjusted"] = []
-                            self.metrics.extend([f"homophily_{i}_control", f"homophily_{i}_control_adjusted"])
+                            self.metric_names.extend([f"homophily_{i}_control", f"homophily_{i}_control_adjusted"])
+                    else:
+                        self.avg_metrics[f"{metric}_{i}"] = []
+                        self.metric_names.append(f"{metric}_{i}")
                 else:
-                    self.metrics[f"{metric}_{i}"] = []
-                    self.metrics.append(f"{metric}_{i}")
+                    self.avg_metrics[f"{metric}_{i}"] = []
+                    self.metric_names.append(f"{metric}_{i}")
 
         if self.is_ab_test:
             for condition in ['control', 'treatment']:
                 self.avg_metrics[f"avg_degree_{condition}"] = []
                 self.avg_metrics[f"global_clustering_{condition}"] = []
                 self.avg_metrics[f"gini_coeff_{condition}"] = []
-                self.metrics.extend([f"avg_degree_{condition}", f"global_clustering_{condition}", f"gini_coeff_{condition}"])
+                self.metric_names.extend([f"avg_degree_{condition}", f"global_clustering_{condition}", f"gini_coeff_{condition}"])
                 if condition == 'control':
                     self.avg_metrics[f"avg_degree_{condition}_adjusted"] = []
                     self.avg_metrics[f"global_clustering_{condition}_adjusted"] = []
                     self.avg_metrics[f"gini_coeff_{condition}_adjusted"] = []
-                    self.metrics.extend([f"avg_degree_{condition}_adjusted", f"global_clustering_{condition}_adjusted", f"gini_coeff_{condition}_adjusted"])
+                    self.metric_names.extend([f"avg_degree_{condition}_adjusted", f"global_clustering_{condition}_adjusted", f"gini_coeff_{condition}_adjusted"])
                 if condition == 'treatment':
                     self.avg_metrics[f"global_clustering_{condition}_adjusted"] = []
-                    self.metrics.append(f"global_clustering_{condition}_adjusted")
+                    self.metric_names.append(f"global_clustering_{condition}_adjusted")
 
     def add_metrics(self, experiment: Experiment):
         exp_metrics = experiment.metrics
-        for metric in self.metrics:
+        for metric in self.metric_names:
             self.avg_metrics[metric].append(exp_metrics[metric])
     
     def mean_confidence_interval(self, data, confidence=0.95):
@@ -952,14 +955,13 @@ class Conclusion:
         return m.tolist(), h.tolist()
     
     def add_stats(self, metric_name):
-        self.metric_names.append(metric_name)
         avg, ci = self.mean_confidence_interval(self.avg_metrics[metric_name])
         self.avg_values[metric_name] = avg
         self.ci_values[metric_name] = ci
 
     def take_average(self):
-        self.metric_names, self.avg_values, self.ci_values = [], {}, {}
-        for metric in self.metrics:
+        self.avg_values, self.ci_values = {}, {}
+        for metric in self.metric_names:
             self.add_stats(metric)
     
     def plot_avg_metrics(self):
@@ -1046,8 +1048,8 @@ if __name__ == "__main__":
     # An example of running the experiments
     mu1 = np.array([0,1])
     mu2 = np.array([1,0])
-    N1 = 50
-    N2 = 50
+    N1 = 20
+    N2 = 20
     sigma1 = 0.05
     sigma2 = 0.05
     a = 2
@@ -1058,11 +1060,11 @@ if __name__ == "__main__":
     grp_info = [{'mean': mu1, 'variance': sigma1*np.identity(2), 'size': N1},
                 {'mean': mu2, 'variance': sigma2*np.identity(2), 'size': N2}]
     conclusion.run_experiments(grp_info, plot=False, init_how='embedding', Ns=N1+N2, Nf=10, 
-                            node_step=5, total_step=400, acc_how='constant',acc_prob=0.5, a=a, b=b,
+                            node_step=5, total_step=200, acc_how='constant',acc_prob=0.5, a=a, b=b,
                             beta=beta,
                             p2_prob=0.5,
                             ng_how='embedding', 
-                            intervention_time=list(range(50, 200)),
+                            intervention_time=list(range(50, 100)),
                             rec_how='random_fof',
                             node_removal=False,
                             edge_removal=False,
