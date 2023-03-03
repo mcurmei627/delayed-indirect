@@ -28,12 +28,12 @@ def run(setting, rec_how, acc_how, intervention_end=None, node_removal=False, ed
         sigma2 = 0.01
     
     elif setting == 'minority_homophily':
-        mu1 = np.array([0,1])
+        mu1 = np.array([0,0.9])
         mu2 = np.array([1.2,0])
         N1 = 60
         N2 = 40
         sigma1 = 0.05
-        sigma2 = 0.01
+        sigma2 = 0.05
     
     elif setting == 'majority_heterophily':
         mu1 = np.array([0,0.6])
@@ -86,12 +86,12 @@ def run(setting, rec_how, acc_how, intervention_end=None, node_removal=False, ed
         pkl.dump([rec_how, acc_how, intervention_end, conclusion], f)
 
 settings = ['heterogeneity', 'homogeneity', 'minority_homophily', 'majority_heterophily']   
-settings = ['homo+hetero']     
+settings = ['minority_homophily']     
 rec_how  = ['embedding', 'random_fof']
 acc_how = ['constant', 'embedding']
 intervention_end = list(range(100, 401, 100))
 intervention_end.append(50)
-node_removal = [True, False]
+node_removal = [False]
 edge_removal = [True, False]
 p2_mediated = [True, False]
 

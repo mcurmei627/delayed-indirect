@@ -9,6 +9,8 @@ import json
 import os
 import matplotlib.pyplot as plt
 
+from time import time
+
 """
 Node class stores node attributes: 
     - idx, which corresponds to its node index in graph.
@@ -1056,6 +1058,7 @@ if __name__ == "__main__":
     b = 5
     beta = 10
 
+    then = time()
     conclusion = Conclusion(list(range(1)))
     grp_info = [{'mean': mu1, 'variance': sigma1*np.identity(2), 'size': N1},
                 {'mean': mu2, 'variance': sigma2*np.identity(2), 'size': N2}]
@@ -1065,9 +1068,12 @@ if __name__ == "__main__":
                             p2_prob=0.5,
                             ng_how='embedding', 
                             intervention_time=list(range(50, 200)),
-                            rec_how='random_fof',
+                            rec_how='adamic_adar',
                             node_removal=False,
                             edge_removal=False,
                             freq=5, record_each_run=False, rec_sample_fraction=0.1,
                             is_ab_test=True, treatment_probability=[1])
     print(conclusion.avg_values)
+    now = time()
+    elapsed = (now - then)/60
+    print('elapsed time: ', elapsed, ' minutes')
